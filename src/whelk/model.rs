@@ -6,54 +6,54 @@ pub trait HasSignature {
     fn signature(&self) -> HashSet<Rc<Entity>>;
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Role {
     pub id: String,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Individual {
     pub id: String,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct AtomicConcept {
     pub id: String,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct ExistentialRestriction {
     pub role: Rc<Role>,
     pub concept: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Conjunction {
     pub left: Rc<Concept>,
     pub right: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Disjunction {
     pub operands: HashSet<Rc<Concept>>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct SelfRestriction {
     pub role: Rc<Role>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Complement {
     pub concept: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Nominal {
     pub individual: Rc<Individual>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub enum Entity {
     Role(Rc<Role>),
     AtomicConcept(Rc<AtomicConcept>),
@@ -70,7 +70,7 @@ impl Entity {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub enum Concept {
     AtomicConcept(Rc<AtomicConcept>),
     Conjunction(Rc<Conjunction>),
@@ -140,26 +140,26 @@ impl HasSignature for Concept {
     }
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct ConceptInclusion {
     pub subclass: Rc<Concept>,
     pub superclass: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct RoleInclusion {
     pub subproperty: Rc<Role>,
     pub superproperty: Rc<Role>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub struct RoleComposition {
     pub first: Rc<Role>,
     pub second: Rc<Role>,
     pub superproperty: Rc<Role>,
 }
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub enum Axiom {
     ConceptInclusion(Rc<ConceptInclusion>),
     RoleInclusion(Rc<RoleInclusion>),
@@ -186,7 +186,7 @@ impl HasSignature for Axiom {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub enum QueueExpression {
     Concept(Rc<Concept>),
     ConceptInclusion(Rc<ConceptInclusion>),
