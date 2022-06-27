@@ -11,6 +11,12 @@ pub struct Role {
     pub id: String,
 }
 
+impl Role {
+    pub fn composition_role_prefix() -> &'static str {
+        "urn:whelk:composition_role:"
+    }
+}
+
 #[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Individual {
     pub id: String,
@@ -93,8 +99,11 @@ impl Concept {
             }
             Concept::Disjunction(disjunction) =>
                 disjunction.operands.iter().flat_map(|o| o.concept_signature()).collect(),
-            Concept::ExistentialRestriction(er) =>
-                HashSet::unit(Rc::clone(&er.concept)),
+            Concept::ExistentialRestriction(er) => {
+                let mut sig = er.concept.concept_signature();
+                sig.insert(Rc::new(self.clone()));
+                sig
+            }
             Concept::SelfRestriction(_) =>
                 HashSet::unit(Rc::new(self.clone())),
             Concept::Complement(complement) => {
