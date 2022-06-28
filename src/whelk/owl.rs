@@ -57,9 +57,14 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
                     let second_opt = pair.get(1);
                     match (first_opt, second_opt) {
                         (Some(first), Some(second)) => {
-                            let first_second = concept_inclusion(first, second);
-                            let second_first = concept_inclusion(second, first);
-                            hashset![first_second, second_first]
+                            let mut axioms = HashSet::new();
+                            if first != &globals.nothing {
+                                axioms.insert(concept_inclusion(first, second));
+                            }
+                            if second != &globals.nothing {
+                                axioms.insert(concept_inclusion(second, first));
+                            }
+                            axioms
                         }
                         _ => Default::default(),
                     }
