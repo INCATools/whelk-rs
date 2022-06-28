@@ -169,10 +169,12 @@ fn process(item: QueueExpression, state: &mut ReasonerState, todo: &mut Vec<Queu
         QueueExpression::Link { subject, role, target } =>
             process_link(&subject, &role, &target, state, todo),
         QueueExpression::ConceptInclusion(ci) => {
-            process_concept_inclusion(&ci, state, todo);
-            process_concept_inclusion_minus(&ci, state, todo);
+            let seen = process_concept_inclusion(&ci, state, todo);
+            if !seen {
+                process_concept_inclusion_minus(&ci, state, todo);
+            }
         }
-        QueueExpression::SubPlus(ci) => process_concept_inclusion(&ci, state, todo),
+        QueueExpression::SubPlus(ci) => { process_concept_inclusion(&ci, state, todo); }
         QueueExpression::Concept(concept) => process_concept(&concept, state, todo),
     }
 }
@@ -195,7 +197,7 @@ fn process_concept(concept: &Rc<Concept>, state: &mut ReasonerState, todo: &mut 
     }
 }
 
-fn process_concept_inclusion(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
+fn process_concept_inclusion(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) -> bool {
     let seen = match state.closure_subs_by_superclass.get_mut(&ci.superclass) {
         None => {
             state.closure_subs_by_superclass.insert(Rc::clone(&ci.superclass), hashset![Rc::clone(&ci.subclass)]);
@@ -227,6 +229,7 @@ fn process_concept_inclusion(ci: &Rc<ConceptInclusion>, state: &mut ReasonerStat
         //rule_plus_self()
         //rule_or_right()
     }
+    seen
 }
 
 fn process_concept_inclusion_minus(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
@@ -485,7 +488,6 @@ fn rule_plus_some_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut
     let new_negative_existentials = ci.subclass.concept_signature().iter().filter_map(|c| {
         match c.deref() {
             Concept::ExistentialRestriction(er) => {
-                // dbg!(er);
                 match state.negative_existential_restrictions_by_concept.get_mut(&er.concept) {
                     Some(ers) => {
                         ers.insert(Rc::clone(er));
