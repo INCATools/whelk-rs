@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
-use horned_owl::model::{Axiom as OWLAxiom, Build, Class, ClassExpression, DeclareClass, EquivalentClasses, ObjectProperty, ObjectPropertyExpression, SubObjectPropertyExpression, SubObjectPropertyOf, TransitiveObjectProperty};
+use horned_owl::model::{Axiom as OWLAxiom, Build, Class, ClassAssertion, ClassExpression, DeclareClass, DeclareNamedIndividual, DisjointClasses, DisjointUnion, EquivalentClasses, EquivalentObjectProperties, NamedIndividual, ObjectProperty, ObjectPropertyDomain, ObjectPropertyExpression, SubObjectPropertyExpression, SubObjectPropertyOf, TransitiveObjectProperty, Individual as OWLIndividual, ObjectPropertyAssertion};
+use horned_owl::model::ClassExpression::ObjectUnionOf;
 use horned_owl::ontology::set::SetOntology;
 use im::{HashSet, hashset};
 use itertools::Itertools;
 
-use crate::whelk::model::{AtomicConcept, Axiom, BOTTOM, Complement, Concept, ConceptInclusion, Conjunction, ExistentialRestriction, Role, RoleComposition, RoleInclusion, TOP};
+use crate::whelk::model::{AtomicConcept, Axiom, BOTTOM, Complement, Concept, ConceptInclusion, Conjunction, ExistentialRestriction, Individual, Nominal, Role, RoleComposition, RoleInclusion, TOP};
 
 struct OWLGlobals {
     thing: Rc<Concept>,
@@ -34,10 +35,13 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
     match axiom {
         OWLAxiom::DeclareClass(DeclareClass(Class(iri))) => {
             let subclass = Rc::new(Concept::AtomicConcept(Rc::new(AtomicConcept { id: iri.to_string() })));
-            let superclass = Rc::clone(&globals.thing);
-            HashSet::unit(Rc::new(Axiom::ConceptInclusion(Rc::new(ConceptInclusion { subclass, superclass }))))
+            HashSet::unit(concept_inclusion(&subclass, &globals.thing))
         }
-        OWLAxiom::DeclareNamedIndividual(_) => Default::default(), //FIXME add nominal subclassOf Thing
+        OWLAxiom::DeclareNamedIndividual(DeclareNamedIndividual(NamedIndividual(iri))) => {
+            let individual = Rc::new(Individual { id: iri.to_string() });
+            let subclass = Rc::new(Concept::Nominal(Rc::new(Nominal { individual })));
+            HashSet::unit(concept_inclusion(&subclass, &globals.thing))
+        }
         OWLAxiom::SubClassOf(ax) =>
             match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
                 (Some(subclass), Some(superclass)) =>
@@ -62,8 +66,33 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
                 }
                 ).collect()
         }
-        // OWLAxiom::DisjointClasses(_) => {}
-        // OWLAxiom::DisjointUnion(_) => {}
+        OWLAxiom::DisjointClasses(DisjointClasses(operands)) => {
+            operands.iter()
+                .map(|c| convert_expression(c))
+                .filter_map(|opt| opt)
+                .combinations(2)
+                .flat_map(|pair| {
+                    let first_opt = pair.get(0);
+                    let second_opt = pair.get(1);
+                    match (first_opt, second_opt) {
+                        (Some(first), Some(second)) => {
+                            let conjunction = Rc::new(Concept::Conjunction(Rc::new(
+                                Conjunction {
+                                    left: Rc::clone(first),
+                                    right: Rc::clone(second),
+                                })));
+                            HashSet::unit(concept_inclusion(&conjunction, &globals.nothing))
+                        }
+                        _ => Default::default(),
+                    }
+                }).collect()
+        }
+        OWLAxiom::DisjointUnion(DisjointUnion(cls, expressions)) => {
+            let union = ObjectUnionOf(expressions.clone());
+            let equivalence = OWLAxiom::EquivalentClasses(EquivalentClasses(vec![ClassExpression::Class(cls.clone()), union]));
+            let disjointness = OWLAxiom::DisjointClasses(DisjointClasses(expressions.clone()));
+            translate_axiom_internal(&equivalence, globals).union(translate_axiom_internal(&disjointness, globals))
+        }
         OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
                                           sub: SubObjectPropertyExpression::ObjectPropertyExpression(ObjectPropertyExpression::ObjectProperty(ObjectProperty(sub))),
                                           sup: ObjectPropertyExpression::ObjectProperty(ObjectProperty(sup))
@@ -93,7 +122,7 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
                             sub: SubObjectPropertyExpression::ObjectPropertyExpression(sub),
                             sup: ObjectPropertyExpression::ObjectProperty(ObjectProperty(sup.clone())),
                         });
-                        translate_axiom(&axiom)
+                        translate_axiom_internal(&axiom, globals)
                     }
                     _ => {
                         match (props.get(0), props.get(1)) {
@@ -111,21 +140,21 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
                                     let composition_property_id = format!("{}{}:{}", Role::composition_role_prefix(), first_id, second_id);
                                     let comp_iri = Build::new().iri(composition_property_id);
                                     let composition_property = ObjectPropertyExpression::ObjectProperty(ObjectProperty(comp_iri));
-                                    let beginning_chain = translate_axiom(&OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
+                                    let beginning_chain = translate_axiom_internal(&OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
                                         sub: SubObjectPropertyExpression::ObjectPropertyChain(vec![
                                             ObjectPropertyExpression::ObjectProperty(ObjectProperty(first_id.clone())),
                                             ObjectPropertyExpression::ObjectProperty(ObjectProperty(second_id.clone())),
                                         ]),
                                         sup: composition_property.clone(),
-                                    }));
+                                    }), globals);
                                     let mut new_chain = props.clone();
                                     new_chain.remove(0);
                                     new_chain.remove(0);
                                     new_chain.insert(0, composition_property);
-                                    let rest_of_chain = translate_axiom(&OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
+                                    let rest_of_chain = translate_axiom_internal(&OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
                                         sub: SubObjectPropertyExpression::ObjectPropertyChain(new_chain),
                                         sup: ObjectPropertyExpression::ObjectProperty(ObjectProperty(sup.clone())),
-                                    }));
+                                    }), globals);
                                     beginning_chain.union(rest_of_chain)
                                 }
                             }
@@ -137,11 +166,41 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
                 Default::default()
             }
         }
-        // OWLAxiom::EquivalentObjectProperties(_) => {}
+        OWLAxiom::EquivalentObjectProperties(EquivalentObjectProperties(props)) => {
+            props.iter()
+                .combinations(2)
+                .flat_map(|pair| {
+                    let first_opt = pair.get(0);
+                    let second_opt = pair.get(1);
+                    match (first_opt, second_opt) {
+                        (Some(first), Some(second)) => {
+                            let first_second = OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
+                                sub: SubObjectPropertyExpression::ObjectPropertyExpression(first.clone().clone()),
+                                sup: second.clone().clone(),
+                            });
+                            let second_first = OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
+                                sub: SubObjectPropertyExpression::ObjectPropertyExpression(second.clone().clone()),
+                                sup: first.clone().clone(),
+                            });
+                            translate_axiom_internal(&first_second, globals).union(translate_axiom_internal(&second_first, globals))
+                        }
+                        _ => Default::default(),
+                    }
+                }).collect()
+        }
+        OWLAxiom::ObjectPropertyDomain(ObjectPropertyDomain { ope: ObjectPropertyExpression::ObjectProperty(ObjectProperty(prop)), ce: cls }) => {
+            convert_expression(cls).iter().map(|c| {
+                let restriction = Rc::new(Concept::ExistentialRestriction(Rc::new(
+                    ExistentialRestriction {
+                        role: Rc::new(Role { id: prop.to_string() }),
+                        concept: Rc::clone(&globals.thing),
+                    })));
+                concept_inclusion(&restriction, &c)
+            }).collect()
+        }
+        // OWLAxiom::ObjectPropertyRange(_) => {} //TODO
         // OWLAxiom::DisjointObjectProperties(_) => {}
         // OWLAxiom::InverseObjectProperties(_) => {}
-        // OWLAxiom::ObjectPropertyDomain(_) => {}
-        // OWLAxiom::ObjectPropertyRange(_) => {}
         // OWLAxiom::FunctionalObjectProperty(_) => {}
         // OWLAxiom::InverseFunctionalObjectProperty(_) => {}
         // OWLAxiom::ReflexiveObjectProperty(_) => {}
@@ -149,11 +208,35 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
         // OWLAxiom::SymmetricObjectProperty(_) => {}
         // OWLAxiom::AsymmetricObjectProperty(_) => {}
         OWLAxiom::TransitiveObjectProperty(TransitiveObjectProperty(prop)) => {
-            translate_axiom(&OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
+            translate_axiom_internal(&OWLAxiom::SubObjectPropertyOf(SubObjectPropertyOf {
                 sub: SubObjectPropertyExpression::ObjectPropertyChain(vec![prop.clone(), prop.clone()]),
                 sup: prop.clone(),
-            }))
+            }), globals)
         }
+        // OWLAxiom::SameIndividual(_) => {} //TODO
+        // OWLAxiom::DifferentIndividuals(_) => {} //TODO
+        OWLAxiom::ClassAssertion(ClassAssertion { ce: cls, i: OWLIndividual::Named(NamedIndividual(ind)) }) => {
+            convert_expression(cls).iter().flat_map(|superclass| {
+                let individual = Rc::new(Individual { id: ind.to_string() });
+                let subclass = Rc::new(Concept::Nominal(Rc::new(Nominal { individual })));
+                HashSet::unit(concept_inclusion(&subclass, superclass))
+            }).collect()
+        }
+        OWLAxiom::ObjectPropertyAssertion(ObjectPropertyAssertion {
+                                              ope: property_expression,
+                                              from: OWLIndividual::Named(NamedIndividual(axiom_subject)),
+                                              to: OWLIndividual::Named(NamedIndividual(axiom_target))
+                                          }) => {
+            let (subject, prop, target) = match property_expression {
+                ObjectPropertyExpression::ObjectProperty(ObjectProperty(prop)) => (axiom_subject, prop, axiom_target),
+                ObjectPropertyExpression::InverseObjectProperty(ObjectProperty(prop)) => (axiom_target, prop, axiom_subject),
+            };
+            let subclass = Rc::new(Concept::Nominal(Rc::new(Nominal { individual: Rc::new(Individual { id: subject.to_string() }) })));
+            let target_nominal = Rc::new(Concept::Nominal(Rc::new(Nominal { individual: Rc::new(Individual { id: target.to_string() }) })));
+            let superclass = Rc::new(Concept::ExistentialRestriction(Rc::new(ExistentialRestriction { role: Rc::new(Role { id: prop.to_string() }), concept: target_nominal })));
+            HashSet::unit(concept_inclusion(&subclass, &superclass))
+        }
+        // OWLAxiom::NegativeObjectPropertyAssertion(_) => {} //TODO
         // OWLAxiom::SubDataPropertyOf(_) => {}
         // OWLAxiom::EquivalentDataProperties(_) => {}
         // OWLAxiom::DisjointDataProperties(_) => {}
@@ -162,17 +245,8 @@ fn translate_axiom_internal(axiom: &OWLAxiom, globals: &OWLGlobals) -> HashSet<R
         // OWLAxiom::FunctionalDataProperty(_) => {}
         // OWLAxiom::DatatypeDefinition(_) => {}
         // OWLAxiom::HasKey(_) => {}
-        // OWLAxiom::SameIndividual(_) => {}
-        // OWLAxiom::DifferentIndividuals(_) => {}
-        // OWLAxiom::ClassAssertion(_) => {}
-        // OWLAxiom::ObjectPropertyAssertion(_) => {}
-        // OWLAxiom::NegativeObjectPropertyAssertion(_) => {}
         // OWLAxiom::DataPropertyAssertion(_) => {}
         // OWLAxiom::NegativeDataPropertyAssertion(_) => {}
-        // OWLAxiom::AnnotationAssertion(_) => {}
-        // OWLAxiom::SubAnnotationPropertyOf(_) => {}
-        // OWLAxiom::AnnotationPropertyDomain(_) => {}
-        // OWLAxiom::AnnotationPropertyRange(_) => {}
         _ => Default::default(),
     }
 }
@@ -249,17 +323,17 @@ fn convert_expression(expression: &ClassExpression) -> Option<Rc<Concept>> {
 
 fn expand_conjunction(mut operands: Vec<Rc<Concept>>) -> Option<Rc<Concept>> {
     match operands.len() {
-        0 => Default::default(),
-        1 => Some(operands.pop().unwrap()),
-        2 => {
-            let left = operands.pop().unwrap();
-            let right = operands.pop().unwrap();
-            Some(Rc::new(Concept::Conjunction(Rc::new(Conjunction { left, right }))))
-        }
-        _ => {
-            let left = operands.pop().unwrap();
-            let right = expand_conjunction(operands).unwrap();
-            Some(Rc::new(Concept::Conjunction(Rc::new(Conjunction { left, right }))))
-        }
+        0 => None,
+        1 => operands.pop(),
+        2 => operands.pop().map(|left| {
+            operands.pop().map(|right| {
+                Rc::new(Concept::Conjunction(Rc::new(Conjunction { left, right })))
+            })
+        }).flatten(),
+        _ => operands.pop().map(|left| {
+            expand_conjunction(operands).map(|right| {
+                Rc::new(Concept::Conjunction(Rc::new(Conjunction { left, right })))
+            })
+        }).flatten()
     }
 }
