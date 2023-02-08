@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use im::{HashSet, hashset};
+use im::{hashset, HashSet};
 
 pub trait HasSignature {
     fn signature(&self) -> HashSet<Rc<Entity>>;
@@ -90,29 +90,25 @@ pub enum Concept {
 impl Concept {
     pub fn concept_signature(&self) -> HashSet<Rc<Concept>> {
         match self {
-            Concept::AtomicConcept(_) =>
-                HashSet::unit(Rc::new(self.clone())),
+            Concept::AtomicConcept(_) => HashSet::unit(Rc::new(self.clone())),
             Concept::Conjunction(conjunction) => {
                 let mut sig = conjunction.left.concept_signature().union(conjunction.right.concept_signature());
                 sig.insert(Rc::new(self.clone()));
                 sig
             }
-            Concept::Disjunction(disjunction) =>
-                disjunction.operands.iter().flat_map(|o| o.concept_signature()).collect(),
+            Concept::Disjunction(disjunction) => disjunction.operands.iter().flat_map(|o| o.concept_signature()).collect(),
             Concept::ExistentialRestriction(er) => {
                 let mut sig = er.concept.concept_signature();
                 sig.insert(Rc::new(self.clone()));
                 sig
             }
-            Concept::SelfRestriction(_) =>
-                HashSet::unit(Rc::new(self.clone())),
+            Concept::SelfRestriction(_) => HashSet::unit(Rc::new(self.clone())),
             Concept::Complement(complement) => {
                 let mut sig = complement.concept.concept_signature();
                 sig.insert(Rc::new(self.clone()));
                 sig
             }
-            Concept::Nominal(_) =>
-                HashSet::unit(Rc::new(self.clone()))
+            Concept::Nominal(_) => HashSet::unit(Rc::new(self.clone())),
         }
     }
 
@@ -128,23 +124,17 @@ impl Concept {
 impl HasSignature for Concept {
     fn signature(&self) -> HashSet<Rc<Entity>> {
         match self {
-            Concept::AtomicConcept(ac) =>
-                HashSet::unit(Rc::new(Entity::AtomicConcept(Rc::clone(ac)))),
-            Concept::Conjunction(conjunction) =>
-                conjunction.left.signature().union(conjunction.right.signature()),
-            Concept::Disjunction(d) =>
-                d.operands.iter().flat_map(|x| x.signature()).collect(),
+            Concept::AtomicConcept(ac) => HashSet::unit(Rc::new(Entity::AtomicConcept(Rc::clone(ac)))),
+            Concept::Conjunction(conjunction) => conjunction.left.signature().union(conjunction.right.signature()),
+            Concept::Disjunction(d) => d.operands.iter().flat_map(|x| x.signature()).collect(),
             Concept::ExistentialRestriction(er) => {
                 let mut sig = er.concept.signature();
                 sig.insert(Rc::new(Entity::Role(Rc::clone(&er.role))));
                 sig
             }
-            Concept::SelfRestriction(sr) =>
-                HashSet::unit(Rc::new(Entity::Role(Rc::clone(&sr.role)))),
-            Concept::Complement(complement) =>
-                complement.concept.signature(),
-            Concept::Nominal(nominal) =>
-                HashSet::unit(Rc::new(Entity::Individual(Rc::clone(&nominal.individual)))),
+            Concept::SelfRestriction(sr) => HashSet::unit(Rc::new(Entity::Role(Rc::clone(&sr.role)))),
+            Concept::Complement(complement) => complement.concept.signature(),
+            Concept::Nominal(nominal) => HashSet::unit(Rc::new(Entity::Individual(Rc::clone(&nominal.individual)))),
         }
     }
 }
@@ -178,19 +168,11 @@ pub enum Axiom {
 impl HasSignature for Axiom {
     fn signature(&self) -> HashSet<Rc<Entity>> {
         match self {
-            Axiom::ConceptInclusion(ci) =>
-                ci.subclass.signature().union(ci.superclass.signature()),
-            Axiom::RoleInclusion(ri) =>
-                hashset![
-                    Rc::new(Entity::Role(Rc::clone(&ri.subproperty))),
-                    Rc::new(Entity::Role(Rc::clone(&ri.superproperty))),
-                ],
-            Axiom::RoleComposition(rc) =>
-                hashset![
-                    Rc::new(Entity::Role(Rc::clone(&rc.first))),
-                    Rc::new(Entity::Role(Rc::clone(&rc.second))),
-                    Rc::new(Entity::Role(Rc::clone(&rc.superproperty))),
-                ],
+            Axiom::ConceptInclusion(ci) => ci.subclass.signature().union(ci.superclass.signature()),
+            Axiom::RoleInclusion(ri) => hashset![Rc::new(Entity::Role(Rc::clone(&ri.subproperty))), Rc::new(Entity::Role(Rc::clone(&ri.superproperty))),],
+            Axiom::RoleComposition(rc) => {
+                hashset![Rc::new(Entity::Role(Rc::clone(&rc.first))), Rc::new(Entity::Role(Rc::clone(&rc.second))), Rc::new(Entity::Role(Rc::clone(&rc.superproperty))),]
+            }
         }
     }
 }
@@ -200,11 +182,7 @@ pub enum QueueExpression {
     Concept(Rc<Concept>),
     ConceptInclusion(Rc<ConceptInclusion>),
     SubPlus(Rc<ConceptInclusion>),
-    Link {
-        subject: Rc<Concept>,
-        role: Rc<Role>,
-        target: Rc<Concept>,
-    },
+    Link { subject: Rc<Concept>, role: Rc<Role>, target: Rc<Concept> },
 }
 
 pub const TOP: &str = "http://www.w3.org/2002/07/owl#Thing";
