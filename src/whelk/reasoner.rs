@@ -1,10 +1,13 @@
 use std::ops::Deref;
 use std::rc::Rc;
 
-use im::{HashMap, hashmap, HashSet, hashset, Vector, vector};
+use im::{hashmap, hashset, vector, HashMap, HashSet, Vector};
 use itertools::Itertools;
 
-use crate::whelk::model::{AtomicConcept, Axiom, BOTTOM, Complement, Concept, ConceptInclusion, Conjunction, Disjunction, Entity, ExistentialRestriction, HasSignature, QueueExpression, Role, RoleComposition, RoleInclusion, SelfRestriction, TOP};
+use crate::whelk::model::{
+    AtomicConcept, Axiom, Complement, Concept, ConceptInclusion, Conjunction, Disjunction, Entity, ExistentialRestriction, HasSignature, QueueExpression, Role, RoleComposition,
+    RoleInclusion, SelfRestriction, BOTTOM, TOP,
+};
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct ReasonerState {
@@ -53,72 +56,76 @@ impl ReasonerState {
     }
 
     pub fn named_subsumptions(&self) -> Vector<(Rc<AtomicConcept>, Rc<AtomicConcept>)> {
-        self.closure_subs_by_subclass.iter()
+        self.closure_subs_by_subclass
+            .iter()
             .filter_map(|(sub, supers)| match sub.deref() {
                 Concept::AtomicConcept(ac) => Some((ac, supers)),
                 _ => None,
             })
             .flat_map(|(sub, supers)| {
-                supers.iter().filter_map(|sup| {
-                    match sup.deref() {
-                        Concept::AtomicConcept(ac) => {
-                            Some((Rc::clone(sub), Rc::clone(ac)))
-                        }
-                        _ => None
-                    }
+                supers.iter().filter_map(|sup| match sup.deref() {
+                    Concept::AtomicConcept(ac) => Some((Rc::clone(sub), Rc::clone(ac))),
+                    _ => None,
                 })
-            }).collect()
+            })
+            .collect()
     }
 }
 
 pub fn assert(axioms: &HashSet<Rc<Axiom>>) -> ReasonerState {
-    let all_roles: HashSet<Rc<Role>> = axioms.iter()
+    let all_roles: HashSet<Rc<Role>> = axioms
+        .iter()
         .flat_map(|ax| ax.signature())
         .filter_map(|entity| match entity.deref() {
             Entity::Role(role) => Some(Rc::clone(role)),
-            _ => None
-        }).collect();
-    let all_role_inclusions = axioms.iter()
+            _ => None,
+        })
+        .collect();
+    let all_role_inclusions = axioms
+        .iter()
         .filter_map(|ax| match ax.deref() {
             Axiom::RoleInclusion(ri) => Some(Rc::clone(&ri)),
             _ => None,
-        }).collect();
+        })
+        .collect();
     let hier = saturate_roles(all_role_inclusions, &all_roles);
-    let chains = axioms.iter()
+    let chains = axioms
+        .iter()
         .filter_map(|ax| match ax.deref() {
             Axiom::RoleComposition(rc) => Some(Rc::clone(&rc)),
             _ => None,
-        }).collect();
+        })
+        .collect();
     let hier_comps = index_role_compositions(&hier, &chains);
-    let concept_inclusions = axioms.iter()
+    let concept_inclusions = axioms
+        .iter()
         .filter_map(|ax| match ax.deref() {
             Axiom::ConceptInclusion(ci) => Some(Rc::clone(&ci)),
             _ => None,
-        }).collect();
+        })
+        .collect();
     let empty = ReasonerState::empty();
-    let initial_state = ReasonerState {
-        hier,
-        hier_comps,
-        ..empty
-    };
+    let initial_state = ReasonerState { hier, hier_comps, ..empty };
     assert_append(&concept_inclusions, &initial_state)
 }
 
 pub fn assert_append(axioms: &HashSet<Rc<ConceptInclusion>>, state: &ReasonerState) -> ReasonerState {
-    let distinct_concepts: HashSet<Rc<Concept>> = axioms.iter()
-        .flat_map(|ci| ci.subclass.concept_signature().union(ci.superclass.concept_signature()))
-        .collect();
-    let atomic_concepts: HashSet<Rc<AtomicConcept>> = distinct_concepts.iter()
+    let distinct_concepts: HashSet<Rc<Concept>> = axioms.iter().flat_map(|ci| ci.subclass.concept_signature().union(ci.superclass.concept_signature())).collect();
+    let atomic_concepts: HashSet<Rc<AtomicConcept>> = distinct_concepts
+        .iter()
         .filter_map(|c| match c.deref() {
             Concept::AtomicConcept(ac) => Some(Rc::clone(&ac)),
             _ => None,
-        }).collect();
-    let additional_axioms: HashSet<Rc<ConceptInclusion>> = distinct_concepts.iter()
+        })
+        .collect();
+    let additional_axioms: HashSet<Rc<ConceptInclusion>> = distinct_concepts
+        .iter()
         .flat_map(|c| match c.deref() {
             Concept::Disjunction(disjunction) => rule_union(disjunction),
             Concept::Complement(complement) => rule_complement(complement),
             _ => HashSet::new(),
-        }).collect();
+        })
+        .collect();
     //TODO negative_self_restrictions
     let mut assertions_queue: Vec<Rc<ConceptInclusion>> = vec![];
     let mut todo: Vec<QueueExpression> = vec![];
@@ -166,15 +173,16 @@ fn process_asserted_concept_inclusion(ci: &Rc<ConceptInclusion>, state: &mut Rea
 
 fn process(item: QueueExpression, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
     match item {
-        QueueExpression::Link { subject, role, target } =>
-            process_link(&subject, &role, &target, state, todo),
+        QueueExpression::Link { subject, role, target } => process_link(&subject, &role, &target, state, todo),
         QueueExpression::ConceptInclusion(ci) => {
             let seen = process_concept_inclusion(&ci, state, todo);
             if !seen {
                 process_concept_inclusion_minus(&ci, state, todo);
             }
         }
-        QueueExpression::SubPlus(ci) => { process_concept_inclusion(&ci, state, todo); }
+        QueueExpression::SubPlus(ci) => {
+            process_concept_inclusion(&ci, state, todo);
+        }
         QueueExpression::Concept(concept) => process_concept(&concept, state, todo),
     }
 }
@@ -203,12 +211,10 @@ fn process_concept_inclusion(ci: &Rc<ConceptInclusion>, state: &mut ReasonerStat
             state.closure_subs_by_superclass.insert(Rc::clone(&ci.superclass), hashset![Rc::clone(&ci.subclass)]);
             false
         }
-        Some(subs) => {
-            match subs.insert(Rc::clone(&ci.subclass)) {
-                None => false,
-                Some(_) => true,
-            }
-        }
+        Some(subs) => match subs.insert(Rc::clone(&ci.subclass)) {
+            None => false,
+            Some(_) => true,
+        },
     };
     if !seen {
         match state.closure_subs_by_subclass.get_mut(&ci.subclass) {
@@ -239,19 +245,16 @@ fn process_concept_inclusion_minus(ci: &Rc<ConceptInclusion>, state: &mut Reason
 
 fn process_link(subject: &Rc<Concept>, role: &Rc<Role>, target: &Rc<Concept>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
     let seen = match state.links_by_subject.get_mut(subject) {
-        Some(roles_to_targets) => {
-            match roles_to_targets.get_mut(role) {
-                Some(targets) =>
-                    match targets.insert(Rc::clone(target)) {
-                        None => false,
-                        Some(_) => true,
-                    },
-                None => {
-                    roles_to_targets.insert(Rc::clone(role), hashset![Rc::clone(target)]);
-                    false
-                }
+        Some(roles_to_targets) => match roles_to_targets.get_mut(role) {
+            Some(targets) => match targets.insert(Rc::clone(target)) {
+                None => false,
+                Some(_) => true,
+            },
+            None => {
+                roles_to_targets.insert(Rc::clone(role), hashset![Rc::clone(target)]);
+                false
             }
-        }
+        },
         None => {
             let targets = hashset![Rc::clone(target)];
             let roles_to_targets = hashmap! {Rc::clone(role) => targets};
@@ -261,11 +264,14 @@ fn process_link(subject: &Rc<Concept>, role: &Rc<Role>, target: &Rc<Concept>, st
     };
     if !seen {
         match state.links_by_target.get_mut(target) {
-            Some(role_to_subjects) =>
-                match role_to_subjects.get_mut(role) {
-                    Some(subjects) => { subjects.push_back(Rc::clone(subject)); }
-                    None => { role_to_subjects.insert(Rc::clone(role), vector![Rc::clone(subject)]); }
-                },
+            Some(role_to_subjects) => match role_to_subjects.get_mut(role) {
+                Some(subjects) => {
+                    subjects.push_back(Rc::clone(subject));
+                }
+                None => {
+                    role_to_subjects.insert(Rc::clone(role), vector![Rc::clone(subject)]);
+                }
+            },
             None => {
                 let subjects = vector![Rc::clone(subject)];
                 let roles_to_subjects = hashmap! {Rc::clone(role) => subjects};
@@ -286,11 +292,7 @@ fn rule_bottom_left(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: 
         if let Some(roles_to_subjects) = state.links_by_target.get(&ci.subclass) {
             for subjects in roles_to_subjects.values() {
                 for subject in subjects {
-                    todo.push(QueueExpression::ConceptInclusion(Rc::new(
-                        ConceptInclusion {
-                            subclass: Rc::clone(subject),
-                            superclass: Rc::clone(&state.bottom),
-                        })));
+                    todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(subject), superclass: Rc::clone(&state.bottom) })));
                 }
             }
         }
@@ -300,11 +302,7 @@ fn rule_bottom_left(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: 
 fn rule_bottom_right(subject: &Rc<Concept>, _: &Rc<Role>, target: &Rc<Concept>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Some(subs) = state.closure_subs_by_superclass.get(&state.bottom) {
         if subs.contains(target) {
-            todo.push(QueueExpression::ConceptInclusion(Rc::new(
-                ConceptInclusion {
-                    subclass: Rc::clone(subject),
-                    superclass: Rc::clone(&state.bottom),
-                })));
+            todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(subject), superclass: Rc::clone(&state.bottom) })));
         }
     }
 }
@@ -312,11 +310,7 @@ fn rule_bottom_right(subject: &Rc<Concept>, _: &Rc<Role>, target: &Rc<Concept>, 
 fn rule_subclass_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Some(others) = state.closure_subs_by_superclass.get(&ci.subclass) {
         for other in others {
-            todo.push(QueueExpression::ConceptInclusion(Rc::new(
-                ConceptInclusion {
-                    subclass: Rc::clone(other),
-                    superclass: Rc::clone(&ci.superclass),
-                })));
+            todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(other), superclass: Rc::clone(&ci.superclass) })));
         }
     }
 }
@@ -324,48 +318,31 @@ fn rule_subclass_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut V
 fn rule_subclass_right(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Some(others) = state.asserted_concept_inclusions_by_subclass.get(&ci.superclass) {
         for other in others {
-            todo.push(QueueExpression::ConceptInclusion(Rc::new(
-                ConceptInclusion {
-                    subclass: Rc::clone(&ci.subclass),
-                    superclass: Rc::clone(&other.superclass),
-                })));
+            todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(&ci.subclass), superclass: Rc::clone(&other.superclass) })));
         }
     }
 }
 
 fn rule_0(concept: &Rc<Concept>, _: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
-    todo.push(QueueExpression::ConceptInclusion(Rc::new(
-        ConceptInclusion {
-            subclass: Rc::clone(concept),
-            superclass: Rc::clone(concept),
-        })));
+    todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(concept), superclass: Rc::clone(concept) })));
 }
 
 fn rule_top(concept: &Rc<Concept>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
-    todo.push(QueueExpression::ConceptInclusion(Rc::new(
-        ConceptInclusion {
-            subclass: Rc::clone(concept),
-            superclass: Rc::clone(&state.top),
-        })));
+    todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(concept), superclass: Rc::clone(&state.top) })));
 }
 
 fn rule_minus_and(ci: &Rc<ConceptInclusion>, _: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Concept::Conjunction(conjunction) = ci.superclass.deref() {
-        todo.push(QueueExpression::ConceptInclusion(Rc::new(
-            ConceptInclusion {
-                subclass: Rc::clone(&ci.subclass),
-                superclass: Rc::clone(&conjunction.left),
-            })));
-        todo.push(QueueExpression::ConceptInclusion(Rc::new(
-            ConceptInclusion {
-                subclass: Rc::clone(&ci.subclass),
-                superclass: Rc::clone(&conjunction.right),
-            })));
+        todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(&ci.subclass), superclass: Rc::clone(&conjunction.left) })));
+        todo.push(QueueExpression::ConceptInclusion(Rc::new(ConceptInclusion { subclass: Rc::clone(&ci.subclass), superclass: Rc::clone(&conjunction.right) })));
     }
 }
 
 fn rule_plus_and_a(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
-    let new_negative_conjunctions = ci.subclass.concept_signature().iter()
+    let new_negative_conjunctions = ci
+        .subclass
+        .concept_signature()
+        .iter()
         .filter_map(|c| match c.deref() {
             Concept::Conjunction(conjunction) => {
                 state.asserted_negative_conjunctions.insert(Rc::clone(conjunction));
@@ -390,7 +367,8 @@ fn rule_plus_and_a(ci: &Rc<ConceptInclusion>, state: &mut ReasonerState, todo: &
                 Some(Rc::clone(conjunction))
             }
             _ => None,
-        }).collect();
+        })
+        .collect();
     rule_plus_and_b(new_negative_conjunctions, state, todo);
 }
 
@@ -400,11 +378,7 @@ fn rule_plus_and_b(new_negative_conjunctions: Vec<Rc<Conjunction>>, state: &Reas
             if let Some(right_subclasses) = state.closure_subs_by_superclass.get(&conjunction.right) {
                 let common = left_subclasses.clone().intersection(right_subclasses.clone());
                 for c in common {
-                    todo.push(QueueExpression::SubPlus(Rc::new(
-                        ConceptInclusion {
-                            subclass: Rc::clone(&c),
-                            superclass: Rc::new(Concept::Conjunction(Rc::clone(&conjunction))),
-                        })));
+                    todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion { subclass: Rc::clone(&c), superclass: Rc::new(Concept::Conjunction(Rc::clone(&conjunction))) })));
                 }
             }
         }
@@ -420,21 +394,19 @@ fn rule_plus_and_left(ci: &Rc<ConceptInclusion>, state: &ReasonerState, todo: &m
             if d2s.len() < conjunctions_matching_left.len() {
                 for d2 in d2s {
                     if let Some(conjunction) = conjunctions_matching_left.get(d2) {
-                        todo.push(QueueExpression::SubPlus(Rc::new(
-                            ConceptInclusion {
-                                subclass: Rc::clone(c),
-                                superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
-                            })));
+                        todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion {
+                            subclass: Rc::clone(c),
+                            superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
+                        })));
                     }
                 }
             } else {
                 for (right, conjunction) in conjunctions_matching_left {
                     if d2s.contains(right) {
-                        todo.push(QueueExpression::SubPlus(Rc::new(
-                            ConceptInclusion {
-                                subclass: Rc::clone(c),
-                                superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
-                            })));
+                        todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion {
+                            subclass: Rc::clone(c),
+                            superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
+                        })));
                     }
                 }
             }
@@ -446,27 +418,24 @@ fn rule_plus_and_right(ci: &Rc<ConceptInclusion>, state: &ReasonerState, todo: &
     let d2 = &ci.superclass;
     let c = &ci.subclass;
     if let Some(d1s) = state.closure_subs_by_subclass.get(c) {
-        if let Some(conjunctions_matching_right) =
-        state.asserted_negative_conjunctions_by_right_operand.get(d2) {
+        if let Some(conjunctions_matching_right) = state.asserted_negative_conjunctions_by_right_operand.get(d2) {
             // choose a join order: can make a massive performance difference
             if d1s.len() < conjunctions_matching_right.len() {
                 for d1 in d1s {
                     if let Some(conjunction) = conjunctions_matching_right.get(d1) {
-                        todo.push(QueueExpression::SubPlus(Rc::new(
-                            ConceptInclusion {
-                                subclass: Rc::clone(c),
-                                superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
-                            })));
+                        todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion {
+                            subclass: Rc::clone(c),
+                            superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
+                        })));
                     }
                 }
             } else {
                 for (left, conjunction) in conjunctions_matching_right {
                     if d1s.contains(left) {
-                        todo.push(QueueExpression::SubPlus(Rc::new(
-                            ConceptInclusion {
-                                subclass: Rc::clone(c),
-                                superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
-                            })));
+                        todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion {
+                            subclass: Rc::clone(c),
+                            superclass: Rc::new(Concept::Conjunction(Rc::clone(conjunction))),
+                        })));
                     }
                 }
             }
@@ -476,17 +445,16 @@ fn rule_plus_and_right(ci: &Rc<ConceptInclusion>, state: &ReasonerState, todo: &
 
 fn rule_minus_some(ci: &ConceptInclusion, _: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Concept::ExistentialRestriction(er) = ci.superclass.deref() {
-        todo.push(QueueExpression::Link {
-            subject: Rc::clone(&ci.subclass),
-            role: Rc::clone(&er.role),
-            target: Rc::clone(&er.concept),
-        })
+        todo.push(QueueExpression::Link { subject: Rc::clone(&ci.subclass), role: Rc::clone(&er.role), target: Rc::clone(&er.concept) })
     }
 }
 
 fn rule_plus_some_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
-    let new_negative_existentials = ci.subclass.concept_signature().iter().filter_map(|c| {
-        match c.deref() {
+    let new_negative_existentials = ci
+        .subclass
+        .concept_signature()
+        .iter()
+        .filter_map(|c| match c.deref() {
             Concept::ExistentialRestriction(er) => {
                 match state.negative_existential_restrictions_by_concept.get_mut(&er.concept) {
                     Some(ers) => {
@@ -498,9 +466,9 @@ fn rule_plus_some_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut
                 }
                 Some(Rc::clone(er))
             }
-            _ => None
-        }
-    }).collect();
+            _ => None,
+        })
+        .collect();
     rule_plus_some_b_left(new_negative_existentials, state, todo);
 }
 
@@ -511,24 +479,21 @@ fn rule_plus_some_b_left(new_negative_existentials: Vec<Rc<ExistentialRestrictio
             for subclass in subclasses {
                 new_propagations.push((Rc::clone(subclass), Rc::clone(&er)));
                 match state.propagations.get_mut(subclass) {
-                    Some(roles_to_ers) => {
-                        match roles_to_ers.get_mut(&er.role) {
-                            Some(ers) => {
-                                ers.push_back(Rc::clone(&er));
-                            }
-                            None => {
-                                roles_to_ers.insert(Rc::clone(&er.role), vector![Rc::clone(&er)]);
-                            }
+                    Some(roles_to_ers) => match roles_to_ers.get_mut(&er.role) {
+                        Some(ers) => {
+                            ers.push_back(Rc::clone(&er));
                         }
-                    }
+                        None => {
+                            roles_to_ers.insert(Rc::clone(&er.role), vector![Rc::clone(&er)]);
+                        }
+                    },
                     None => {
-                        state.propagations.insert(Rc::clone(subclass),
-                                                  hashmap! {Rc::clone(&er.role) => vector![Rc::clone(&er)]});
+                        state.propagations.insert(Rc::clone(subclass), hashmap! {Rc::clone(&er.role) => vector![Rc::clone(&er)]});
                     }
                 }
             }
         }
-    };
+    }
     rule_plus_some_left(new_propagations, state, todo);
 }
 
@@ -538,19 +503,16 @@ fn rule_plus_some_b_right(ci: &ConceptInclusion, state: &mut ReasonerState, todo
         for er in ers {
             new_propagations.push((Rc::clone(&ci.subclass), Rc::clone(&er)));
             match state.propagations.get_mut(&ci.subclass) {
-                Some(roles_to_ers) => {
-                    match roles_to_ers.get_mut(&er.role) {
-                        Some(ers) => {
-                            ers.push_back(Rc::clone(&er));
-                        }
-                        None => {
-                            roles_to_ers.insert(Rc::clone(&er.role), vector![Rc::clone(&er)]);
-                        }
+                Some(roles_to_ers) => match roles_to_ers.get_mut(&er.role) {
+                    Some(ers) => {
+                        ers.push_back(Rc::clone(&er));
                     }
-                }
+                    None => {
+                        roles_to_ers.insert(Rc::clone(&er.role), vector![Rc::clone(&er)]);
+                    }
+                },
                 None => {
-                    state.propagations.insert(Rc::clone(&ci.subclass),
-                                              hashmap! {Rc::clone(&er.role) => vector![Rc::clone(&er)]});
+                    state.propagations.insert(Rc::clone(&ci.subclass), hashmap! {Rc::clone(&er.role) => vector![Rc::clone(&er)]});
                 }
             }
         }
@@ -565,11 +527,10 @@ fn rule_plus_some_left(new_propagations: Vec<(Rc<Concept>, Rc<ExistentialRestric
                 if let Some(super_roles) = state.hier.get(role) {
                     if super_roles.contains(&er.role) {
                         for subject in subjects {
-                            todo.push(QueueExpression::SubPlus(Rc::new(
-                                ConceptInclusion {
-                                    subclass: Rc::clone(subject),
-                                    superclass: Rc::new(Concept::ExistentialRestriction(Rc::clone(&er))),
-                                })));
+                            todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion {
+                                subclass: Rc::clone(subject),
+                                superclass: Rc::new(Concept::ExistentialRestriction(Rc::clone(&er))),
+                            })));
                         }
                     }
                 }
@@ -584,11 +545,10 @@ fn rule_plus_some_right(subject: &Rc<Concept>, role: &Rc<Role>, target: &Rc<Conc
             for s in ss {
                 if let Some(fs) = role_to_er.get(s) {
                     for f in fs {
-                        todo.push(QueueExpression::SubPlus(Rc::new(
-                            ConceptInclusion {
-                                subclass: Rc::clone(subject),
-                                superclass: Rc::new(Concept::ExistentialRestriction(Rc::clone(f))),
-                            })));
+                        todo.push(QueueExpression::SubPlus(Rc::new(ConceptInclusion {
+                            subclass: Rc::clone(subject),
+                            superclass: Rc::new(Concept::ExistentialRestriction(Rc::clone(f))),
+                        })));
                     }
                 }
             }
@@ -603,11 +563,7 @@ fn rule_ring_left(subject: &Rc<Concept>, role: &Rc<Role>, target: &Rc<Concept>, 
                 if let Some(ss) = r1s.get(role) {
                     for s in ss {
                         for e in es {
-                            todo.push(QueueExpression::Link {
-                                subject: Rc::clone(e),
-                                role: Rc::clone(s),
-                                target: Rc::clone(target),
-                            });
+                            todo.push(QueueExpression::Link { subject: Rc::clone(e), role: Rc::clone(s), target: Rc::clone(target) });
                         }
                     }
                 }
@@ -631,11 +587,7 @@ fn rule_ring_right(subject: &Rc<Concept>, role: &Rc<Role>, target: &Rc<Concept>,
                                 Some(l) => !l.contains(d),
                             };
                             if create_link {
-                                todo.push(QueueExpression::Link {
-                                    subject: Rc::clone(subject),
-                                    role: Rc::clone(s),
-                                    target: Rc::clone(d),
-                                });
+                                todo.push(QueueExpression::Link { subject: Rc::clone(subject), role: Rc::clone(s), target: Rc::clone(d) });
                             }
                         }
                     }
@@ -650,25 +602,15 @@ fn rule_squiggle(_: &Rc<Concept>, _: &Rc<Role>, target: &Rc<Concept>, _: &mut Re
 }
 
 fn rule_union(disjunction: &Rc<Disjunction>) -> HashSet<Rc<ConceptInclusion>> {
-    disjunction.operands.iter().map(|o|
-        ConceptInclusion {
-            subclass: Rc::clone(o),
-            superclass: Rc::new(Concept::Disjunction(Rc::clone(disjunction))),
-        }).collect()
+    disjunction.operands.iter().map(|o| ConceptInclusion { subclass: Rc::clone(o), superclass: Rc::new(Concept::Disjunction(Rc::clone(disjunction))) }).collect()
 }
 
 fn rule_complement(complement: &Complement) -> HashSet<Rc<ConceptInclusion>> {
-    HashSet::unit(Rc::new(
-        ConceptInclusion {
-            subclass: Rc::clone(&complement.concept),
-            superclass: Rc::new(Concept::bottom()),
-        }
-    ))
+    HashSet::unit(Rc::new(ConceptInclusion { subclass: Rc::clone(&complement.concept), superclass: Rc::new(Concept::bottom()) }))
 }
 
 fn saturate_roles(role_inclusions: HashSet<Rc<RoleInclusion>>, all_roles: &HashSet<Rc<Role>>) -> HashMap<Rc<Role>, HashSet<Rc<Role>>> {
-    let grouped = role_inclusions.iter()
-        .group_by(|ri| &ri.subproperty);
+    let grouped = role_inclusions.iter().group_by(|ri| &ri.subproperty);
     let mut sub_to_super: HashMap<Rc<Role>, HashSet<Rc<Role>>> = HashMap::new();
     for (sub, ris) in &grouped {
         let supers = ris.map(|ri| Rc::clone(&ri.superproperty)).collect();
@@ -693,14 +635,11 @@ fn saturate_roles(role_inclusions: HashSet<Rc<RoleInclusion>>, all_roles: &HashS
     result
 }
 
-fn all_super_roles(role: &Rc<Role>, exclude: &HashSet<Rc<Role>>, sub_to_super: &HashMap<Rc<Role>, HashSet<Rc<Role>>>)
-                   -> HashSet<Rc<Role>> {
+fn all_super_roles(role: &Rc<Role>, exclude: &HashSet<Rc<Role>>, sub_to_super: &HashMap<Rc<Role>, HashSet<Rc<Role>>>) -> HashSet<Rc<Role>> {
     let current_exclude = exclude.update(Rc::clone(role));
     let mut result = HashSet::new();
-    for super_prop in sub_to_super.get(role).unwrap_or(&HashSet::default()).iter()
-        .filter(|super_prop| !current_exclude.contains(&Rc::clone(super_prop))) {
-        let all_supers_reflexive = all_super_roles(super_prop, &current_exclude, sub_to_super)
-            .update(Rc::clone(super_prop));
+    for super_prop in sub_to_super.get(role).unwrap_or(&HashSet::default()).iter().filter(|super_prop| !current_exclude.contains(&Rc::clone(super_prop))) {
+        let all_supers_reflexive = all_super_roles(super_prop, &current_exclude, sub_to_super).update(Rc::clone(super_prop));
         for super_super_prop in all_supers_reflexive {
             result.insert(super_super_prop);
         }
@@ -708,56 +647,51 @@ fn all_super_roles(role: &Rc<Role>, exclude: &HashSet<Rc<Role>>, sub_to_super: &
     result
 }
 
-fn index_role_compositions(hier: &HashMap<Rc<Role>, HashSet<Rc<Role>>>, chains: &HashSet<Rc<RoleComposition>>)
-                           -> HashMap<Rc<Role>, HashMap<Rc<Role>, Vector<Rc<Role>>>> {
-    let role_comps_groups = chains.iter()
-        .group_by(|rc| (&rc.first, &rc.second));
+fn index_role_compositions(hier: &HashMap<Rc<Role>, HashSet<Rc<Role>>>, chains: &HashSet<Rc<RoleComposition>>) -> HashMap<Rc<Role>, HashMap<Rc<Role>, Vector<Rc<Role>>>> {
+    let role_comps_groups = chains.iter().group_by(|rc| (&rc.first, &rc.second));
     let mut role_comps: HashMap<(Rc<Role>, Rc<Role>), HashSet<Rc<Role>>> = HashMap::new();
     for (chain, group) in &role_comps_groups {
         let supers = group.map(|rc| Rc::clone(&rc.superproperty)).collect();
         role_comps.insert((Rc::clone(chain.0), Rc::clone(chain.1)), supers);
     }
-    let hier_comps_tuples: HashSet<(Rc<Role>, Rc<Role>, Rc<Role>)> =
-        hier.iter().flat_map(|(r1, s1s)| {
+    let hier_comps_tuples: HashSet<(Rc<Role>, Rc<Role>, Rc<Role>)> = hier
+        .iter()
+        .flat_map(|(r1, s1s)| {
             s1s.iter().flat_map(|s1| {
                 hier.iter().flat_map(|(r2, s2s)| {
-                    s2s.iter().flat_map(|s2| {
-                        match role_comps.get(&(Rc::clone(s1), Rc::clone(s2))) {
-                            Some(ss) => {
-                                ss.iter().flat_map(|s| {
-                                    hashset![(Rc::clone(r1), Rc::clone(r2), Rc::clone(s))]
-                                }).collect()
-                            }
-                            None => HashSet::new()
-                        }
+                    s2s.iter().flat_map(|s2| match role_comps.get(&(Rc::clone(s1), Rc::clone(s2))) {
+                        Some(ss) => ss.iter().flat_map(|s| hashset![(Rc::clone(r1), Rc::clone(r2), Rc::clone(s))]).collect(),
+                        None => HashSet::new(),
                     })
                 })
             })
-        }).collect();
-    let hier_comps_remove: HashSet<(Rc<Role>, Rc<Role>, Rc<Role>)> =
-        hier_comps_tuples.iter().flat_map(|(r1, r2, s)| {
-            hier.get(&Rc::clone(s)).unwrap().iter()
+        })
+        .collect();
+    let hier_comps_remove: HashSet<(Rc<Role>, Rc<Role>, Rc<Role>)> = hier_comps_tuples
+        .iter()
+        .flat_map(|(r1, r2, s)| {
+            hier.get(&Rc::clone(s))
+                .unwrap()
+                .iter()
                 .filter(|super_s| super_s.deref() != s)
                 .filter(|super_s| hier_comps_tuples.contains(&(Rc::clone(r1), Rc::clone(r2), Rc::clone(super_s))))
-                .flat_map(|super_s| {
-                    hashset![(Rc::clone(r1), Rc::clone(r2), Rc::clone(super_s))]
-                }).collect::<HashSet<(Rc<Role>, Rc<Role>, Rc<Role>)>>()
-        }).collect();
+                .flat_map(|super_s| hashset![(Rc::clone(r1), Rc::clone(r2), Rc::clone(super_s))])
+                .collect::<HashSet<(Rc<Role>, Rc<Role>, Rc<Role>)>>()
+        })
+        .collect();
     let hier_comps_tuples_filtered = hier_comps_tuples.relative_complement(hier_comps_remove);
     let mut hier_comps: HashMap<Rc<Role>, HashMap<Rc<Role>, Vector<Rc<Role>>>> = HashMap::new();
     for (r1, r2, s) in hier_comps_tuples_filtered {
         match hier_comps.get_mut(&r1) {
-            Some(r2_map) => {
-                match r2_map.get_mut(&r2) {
-                    Some(ss) => {
-                        ss.push_back(s);
-                    }
-                    None => {
-                        let ss = vector![s];
-                        r2_map.insert(Rc::clone(&r2), ss);
-                    }
+            Some(r2_map) => match r2_map.get_mut(&r2) {
+                Some(ss) => {
+                    ss.push_back(s);
                 }
-            }
+                None => {
+                    let ss = vector![s];
+                    r2_map.insert(Rc::clone(&r2), ss);
+                }
+            },
             None => {
                 let r2_map = hashmap! {Rc::clone(&r2) => vector![s]};
                 hier_comps.insert(Rc::clone(&r1), r2_map);

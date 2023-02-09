@@ -7,11 +7,11 @@ This is an experimental implementation of [Whelk](https://github.com/balhoff/whe
 clone this repo, then:
 
 ```
-cargo build
+cargo build --release
 ```
 
 ## Running
 
 ```
-cargo run --release uberon.owl
+./target/release/whelk -i uberon.owl
 ```
