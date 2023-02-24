@@ -2,13 +2,15 @@
 extern crate log;
 
 use clap::Parser;
-use horned_bin::parse_path;
 use horned_owl::io::ParserConfiguration;
+use horned_owl::model::RcStr;
+use horned_owl::ontology::set::SetOntology;
 use humantime::format_duration;
 use im::hashset;
 use std::error;
+use std::fs::File;
+use std::io::BufReader;
 use std::path;
-use std::rc::Rc;
 use std::time;
 use whelk::whelk::model::AtomicConcept;
 use whelk::whelk::owl::translate_ontology;
@@ -27,16 +29,18 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     let options = Options::parse();
     debug!("{:?}", options);
 
-    let owl_ont = parse_path(&options.input, ParserConfiguration::default()).expect("could not parse path");
-
-    let rc1 = Rc::new(AtomicConcept { id: "foo".to_string() });
-    let rc2 = Rc::clone(&rc1);
-    let set1 = hashset![rc1];
-    debug!("{}", set1.contains(&rc2));
+    let path: &path::PathBuf = &options.input;
+    let ontology = read_input(&path).expect("unable to parse input");
     debug!("Loaded ontology in {}s", start.elapsed().as_secs());
+
+    // let summary = horned_bin::summary::summarize(ont.clone());
+    // debug!("Logical Axioms: {}, Annotation Axioms: {}", summary.logical_axiom, summary.annotation_axiom);
+
     let start_convert = time::Instant::now();
-    let whelk_axioms = translate_ontology(&owl_ont.decompose().0);
+    let whelk_axioms = translate_ontology(&ontology);
     debug!("Converted axioms in {}ms", start_convert.elapsed().as_millis());
+    debug!("whelk_axioms.len(): {}", whelk_axioms.len());
+
     let start_reason = time::Instant::now();
     let whelk = assert(&whelk_axioms);
     debug!("Reasoned in {}s", start_reason.elapsed().as_secs());
@@ -56,4 +60,22 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     // println!("{}", whelk3 == whelk2);
     info!("Duration: {}", format_duration(start.elapsed()).to_string());
     Ok(())
+}
+
+fn read_input(input_path: &path::PathBuf) -> Result<SetOntology<RcStr>, Box<dyn error::Error>> {
+    let file = File::open(&input_path)?;
+    let mut bufreader = BufReader::new(file);
+
+    let config = ParserConfiguration::default();
+    match input_path.extension().and_then(|s| s.to_str()) {
+        Some("owx") => {
+            let ret = horned_owl::io::owx::reader::read(&mut bufreader, config).expect("unable to parse input");
+            Ok(ret.0)
+        }
+        Some("owl") => {
+            let ret = horned_owl::io::rdf::reader::read(&mut bufreader, config).expect("unable to parse input");
+            Ok(ret.0.into())
+        }
+        _ => Err(Box::<dyn error::Error>::from("unable to parse input")),
+    }
 }
