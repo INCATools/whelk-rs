@@ -79,12 +79,12 @@ impl Entity {
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub enum Concept {
     AtomicConcept(Rc<AtomicConcept>),
+    Complement(Rc<Complement>),
     Conjunction(Rc<Conjunction>),
     Disjunction(Rc<Disjunction>),
     ExistentialRestriction(Rc<ExistentialRestriction>),
-    SelfRestriction(Rc<SelfRestriction>),
-    Complement(Rc<Complement>),
     Nominal(Rc<Nominal>),
+    SelfRestriction(Rc<SelfRestriction>),
 }
 
 impl Concept {
