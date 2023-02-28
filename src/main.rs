@@ -78,3 +78,42 @@ fn read_input(input_path: &path::PathBuf) -> Result<SetOntology<RcStr>, Box<dyn 
         _ => Err(Box::<dyn error::Error>::from("unable to parse input")),
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::read_input;
+    use horned_owl::model as hm;
+    use horned_owl::ontology::set::SetOntology;
+    use itertools::Itertools;
+    use std::path;
+
+    #[test]
+    fn test_parse() {
+        let build = hm::Build::new_rc();
+        let sub_class_1 = hm::AnnotatedAxiom::from(hm::SubClassOf {
+            sub: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/CHEBI_24432")),
+            sup: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/BFO_0000023")),
+        });
+        let sub_class_2 = hm::AnnotatedAxiom::from(hm::SubClassOf {
+            sub: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/CHEBI_36080")),
+            sup: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/PR_000018263")),
+        });
+
+        let mut known_diffs = vec![sub_class_1, sub_class_2];
+
+        let asserted_path = path::PathBuf::from("./src/data/go-extract-asserted.owx");
+        let asserted_ontology = read_input(&asserted_path).expect("valid input???");
+        // asserted_ontology.iter().for_each(|e| println!("{:?}", e));
+        let mut asserted_ontology_iter = asserted_ontology.iter();
+        assert!(known_diffs.iter().all(|f| !asserted_ontology_iter.contains(f)));
+
+        let asserted_whelk_axioms = crate::translate_ontology(&asserted_ontology);
+        // asserted_whelk_axioms.iter().for_each(|e| println!("{:?}", e));
+
+        let entailed_path = path::PathBuf::from("./src/data/go-extract-entailed.owx");
+        let entailed_ontology = read_input(&entailed_path).expect("valid input???");
+        // entailed_ontology.iter().for_each(|e| println!("{:?}", e));
+        let mut entailed_ontology_iter = entailed_ontology.iter();
+        assert!(known_diffs.iter().all(|f| entailed_ontology_iter.contains(f)));
+    }
+}
