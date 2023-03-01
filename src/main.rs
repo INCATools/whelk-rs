@@ -83,36 +83,97 @@ fn read_input(input_path: &path::PathBuf) -> Result<SetOntology<RcStr>, Box<dyn 
 mod test {
     use crate::read_input;
     use horned_owl::model as hm;
+    use horned_owl::model::{AnnotatedAxiom, Axiom, AxiomKind, ForIRI, Kinded, RcStr, SubClassOf};
     use horned_owl::ontology::set::SetOntology;
     use itertools::Itertools;
-    use std::path;
+    use std::{error, path};
+    use whelk::whelk::owl::{concept_inclusion, convert_expression};
 
-    #[test]
-    fn test_parse() {
-        let build = hm::Build::new_rc();
-        let sub_class_1 = hm::AnnotatedAxiom::from(hm::SubClassOf {
-            sub: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/CHEBI_24432")),
-            sup: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/BFO_0000023")),
-        });
-        let sub_class_2 = hm::AnnotatedAxiom::from(hm::SubClassOf {
-            sub: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/CHEBI_36080")),
-            sup: hm::ClassExpression::Class(build.class("http://purl.obolibrary.org/obo/PR_000018263")),
-        });
+    fn load_test_ontologies(dir: &str) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
+        let parent_path = path::PathBuf::from("./src/data/inference-tests");
 
-        let known_diffs = vec![sub_class_1, sub_class_2];
-        let known_diffs_iter = known_diffs.iter();
+        let mut asserted_path = parent_path.clone().join(dir).join(format!("{}-asserted.owx", dir));
+        let mut entailed_path = parent_path.clone().join(dir).join(format!("{}-entailed.owx", dir));
+        let mut invalid_path = parent_path.clone().join(dir).join(format!("{}-invalid.owx", dir));
 
-        let asserted_path = path::PathBuf::from("./src/data/inference-tests/go-extract/go-extract-asserted.owx");
-        let asserted_ontology = read_input(&asserted_path).expect("valid input???");
-        // asserted_ontology.iter().for_each(|e| println!("{:?}", e));
-        assert!(known_diffs_iter.clone().all(|f| !asserted_ontology.iter().contains(f)));
+        let ret = match (asserted_path.exists(), entailed_path.exists(), invalid_path.exists()) {
+            (true, true, true) => {
+                let asserted_ontology = read_input(&asserted_path).expect("failed to read asserted_ontology");
+                let entailed_ontology = read_input(&entailed_path).expect("failed to read entailed_ontology");
+                let invalid_ontology = read_input(&invalid_path).expect("failed to read invalid_ontology");
+                (Some(asserted_ontology), Some(entailed_ontology), Some(invalid_ontology))
+            }
+            (true, true, false) => {
+                let asserted_ontology = read_input(&asserted_path).expect("failed to read asserted_ontology");
+                let entailed_ontology = read_input(&entailed_path).expect("failed to read entailed_ontology");
+                (Some(asserted_ontology), Some(entailed_ontology), None)
+            }
+            _ => (None, None, None),
+        };
 
-        let asserted_whelk_axioms = crate::translate_ontology(&asserted_ontology);
-        // asserted_whelk_axioms.iter().for_each(|e| println!("{:?}", e));
-
-        let entailed_path = path::PathBuf::from("./src/data/inference-tests/go-extract/go-extract-entailed.owx");
-        let entailed_ontology = read_input(&entailed_path).expect("valid input???");
-        // entailed_ontology.iter().for_each(|e| println!("{:?}", e));
-        assert!(known_diffs_iter.clone().all(|f| entailed_ontology.iter().contains(f)));
+        Ok(ret)
     }
+
+    macro_rules! subclassof_test {
+        ($name:ident, $dir:literal) => {
+            #[test]
+            fn $name() {
+                let (asserted_ontology, entailed_ontology, invalid_ontology) = load_test_ontologies($dir).expect("could not get test ontologies");
+                match (asserted_ontology, entailed_ontology, invalid_ontology) {
+                    (Some(ao), Some(eo), Some(io)) => {
+                        let asserted_whelk_axioms = crate::translate_ontology(&ao);
+                        let eo_subclassofs: Vec<_> = eo.into_iter().filter(|a| a.axiom.kind() == AxiomKind::SubClassOf).map(|a| a.axiom).collect();
+                        eo_subclassofs.iter().for_each(|e| match e {
+                            hm::Axiom::SubClassOf(ax) => {
+                                match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
+                                    (Some(subclass), Some(superclass)) => {
+                                        let ci = concept_inclusion(&subclass, &superclass);
+                                        println!("{:?}", ci);
+                                        assert!(asserted_whelk_axioms.iter().contains(&ci));
+                                    }
+                                    _ => {}
+                                };
+                            }
+                            _ => {}
+                        });
+                        let io_subclassofs: Vec<_> = io.into_iter().filter(|a| a.axiom.kind() == AxiomKind::SubClassOf).map(|a| a.axiom).collect();
+                        io_subclassofs.iter().for_each(|e| match e {
+                            hm::Axiom::SubClassOf(ax) => {
+                                match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
+                                    (Some(subclass), Some(superclass)) => {
+                                        let ci = concept_inclusion(&subclass, &superclass);
+                                        println!("{:?}", ci);
+                                        assert!(!asserted_whelk_axioms.iter().contains(&ci));
+                                    }
+                                    _ => {}
+                                };
+                            }
+                            _ => {}
+                        });
+                    }
+                    (Some(ao), Some(eo), None) => {
+                        let asserted_whelk_axioms = crate::translate_ontology(&ao);
+                        let eo_subclassofs: Vec<_> = eo.into_iter().filter(|a| a.axiom.kind() == AxiomKind::SubClassOf).map(|a| a.axiom).collect();
+                        eo_subclassofs.iter().for_each(|e| match e {
+                            hm::Axiom::SubClassOf(ax) => {
+                                match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
+                                    (Some(subclass), Some(superclass)) => {
+                                        let ci = concept_inclusion(&subclass, &superclass);
+                                        println!("{:?}", ci);
+                                        assert!(asserted_whelk_axioms.iter().contains(&ci));
+                                    }
+                                    _ => {}
+                                };
+                            }
+                            _ => {}
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        };
+    }
+
+    subclassof_test!(test_for_subclassof_go_extract, "go-extract");
+    subclassof_test!(test_for_subclassof_skeletons, "skeletons");
 }
