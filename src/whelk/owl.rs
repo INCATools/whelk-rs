@@ -250,7 +250,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobal
     }
 }
 
-fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -> Rc<wm::Axiom> {
+pub fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -> Rc<wm::Axiom> {
     Rc::new(wm::Axiom::ConceptInclusion(Rc::new(wm::ConceptInclusion { subclass: Rc::clone(subclass), superclass: Rc::clone(superclass) })))
 }
 
@@ -263,7 +263,7 @@ fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -
 //       //scowl is missing DataHasValue
 //       case dhv: OWLDataHasValue => Some(DataHasValue(DataRole(dhv.getProperty.asOWLDataProperty.getIRI.toString), dhv.getFiller))
 
-fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>) -> Option<Rc<wm::Concept>> {
+pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>) -> Option<Rc<wm::Concept>> {
     match expression {
         hm::ClassExpression::Class(hm::Class(iri)) => {
             let id = iri.to_string();
