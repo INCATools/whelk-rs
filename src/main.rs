@@ -102,7 +102,7 @@ mod test {
         let known_diffs = vec![sub_class_1, sub_class_2];
         let known_diffs_iter = known_diffs.iter();
 
-        let asserted_path = path::PathBuf::from("./src/data/go-extract-asserted.owx");
+        let asserted_path = path::PathBuf::from("./src/data/inference-tests/go-extract/go-extract-asserted.owx");
         let asserted_ontology = read_input(&asserted_path).expect("valid input???");
         // asserted_ontology.iter().for_each(|e| println!("{:?}", e));
         assert!(known_diffs_iter.clone().all(|f| !asserted_ontology.iter().contains(f)));
@@ -110,7 +110,7 @@ mod test {
         let asserted_whelk_axioms = crate::translate_ontology(&asserted_ontology);
         // asserted_whelk_axioms.iter().for_each(|e| println!("{:?}", e));
 
-        let entailed_path = path::PathBuf::from("./src/data/go-extract-entailed.owx");
+        let entailed_path = path::PathBuf::from("./src/data/inference-tests/go-extract/go-extract-entailed.owx");
         let entailed_ontology = read_input(&entailed_path).expect("valid input???");
         // entailed_ontology.iter().for_each(|e| println!("{:?}", e));
         assert!(known_diffs_iter.clone().all(|f| entailed_ontology.iter().contains(f)));
