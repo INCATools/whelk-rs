@@ -86,15 +86,19 @@ mod test {
     use horned_owl::model::{AnnotatedAxiom, Axiom, AxiomKind, ForIRI, Kinded, RcStr, SubClassOf};
     use horned_owl::ontology::set::SetOntology;
     use itertools::Itertools;
-    use std::{error, path};
+    use std::ops::Deref;
+    use std::path::PathBuf;
+    use std::rc::Rc;
+    use std::{error, fs, path};
+    use whelk::whelk::model as wm;
+    use whelk::whelk::model::Concept;
     use whelk::whelk::owl::{concept_inclusion, convert_expression};
 
-    fn load_test_ontologies(dir: &str) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
-        let parent_path = path::PathBuf::from("./src/data/inference-tests");
-
-        let mut asserted_path = parent_path.clone().join(dir).join(format!("{}-asserted.owx", dir));
-        let mut entailed_path = parent_path.clone().join(dir).join(format!("{}-entailed.owx", dir));
-        let mut invalid_path = parent_path.clone().join(dir).join(format!("{}-invalid.owx", dir));
+    fn load_test_ontologies(parent_path: &PathBuf) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
+        let parent_name = parent_path.parent().and_then(|a| a.file_name()).unwrap();
+        let asserted_path = parent_path.clone().join(format!("{}-asserted.owx", parent_name.to_string_lossy()));
+        let entailed_path = parent_path.clone().join(format!("{}-entailed.owx", parent_name.to_string_lossy()));
+        let invalid_path = parent_path.clone().join(format!("{}-invalid.owx", parent_name.to_string_lossy()));
 
         let ret = match (asserted_path.exists(), entailed_path.exists(), invalid_path.exists()) {
             (true, true, true) => {
@@ -114,66 +118,98 @@ mod test {
         Ok(ret)
     }
 
-    macro_rules! subclassof_test {
-        ($name:ident, $dir:literal) => {
-            #[test]
-            fn $name() {
-                let (asserted_ontology, entailed_ontology, invalid_ontology) = load_test_ontologies($dir).expect("could not get test ontologies");
+    #[test]
+    fn test_for_subclassof() {
+        let data_inference_tests_dir = path::PathBuf::from("./src/data/inference-tests");
+        let read_dir_results = fs::read_dir(data_inference_tests_dir).expect("no such directory?");
+        read_dir_results
+            .flat_map(|a| a.map(|b| b.path()))
+            .filter_map(|a| {
+                let path = a.as_path();
+                if path.is_dir() {
+                    Some(path.to_path_buf())
+                } else {
+                    None
+                }
+            })
+            .for_each(|test_dir| {
+                println!("testing directory: {:?}", test_dir);
+                let (asserted_ontology, entailed_ontology, invalid_ontology) = load_test_ontologies(&test_dir).expect("could not get test ontologies");
+
                 match (asserted_ontology, entailed_ontology, invalid_ontology) {
                     (Some(ao), Some(eo), Some(io)) => {
                         let asserted_whelk_axioms = crate::translate_ontology(&ao);
-                        let eo_subclassofs: Vec<_> = eo.into_iter().filter(|a| a.axiom.kind() == AxiomKind::SubClassOf).map(|a| a.axiom).collect();
-                        eo_subclassofs.iter().for_each(|e| match e {
-                            hm::Axiom::SubClassOf(ax) => {
-                                match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
-                                    (Some(subclass), Some(superclass)) => {
-                                        let ci = concept_inclusion(&subclass, &superclass);
-                                        println!("{:?}", ci);
-                                        assert!(asserted_whelk_axioms.iter().contains(&ci));
-                                    }
-                                    _ => {}
-                                };
-                            }
+
+                        let whelk = whelk::whelk::reasoner::assert(&asserted_whelk_axioms);
+                        let whelk_subs_by_subclass = whelk.closure_subs_by_subclass;
+                        // whelk_subs_by_subclass.iter().for_each(|a| println!("subclass: {:?}", a));
+
+                        let entailed_whelk_axioms = crate::translate_ontology(&eo);
+                        entailed_whelk_axioms.iter().map(|a| Rc::deref(a)).for_each(|a| match a {
+                            wm::Axiom::ConceptInclusion(ci) => match (Rc::deref(&ci.subclass), Rc::deref(&ci.superclass)) {
+                                (Concept::AtomicConcept(sub), Concept::AtomicConcept(sup)) => {
+                                    let subclass_deref = ci.subclass.deref();
+                                    let supclass_deref = ci.superclass.deref();
+                                    assert!(whelk_subs_by_subclass.contains_key(subclass_deref));
+                                    assert!(whelk_subs_by_subclass.contains_key(supclass_deref));
+                                    let values_by_subclass = whelk_subs_by_subclass.get(subclass_deref);
+                                    assert!(values_by_subclass.is_some(), "{}", format!("sub class key is not found: {:?}", subclass_deref));
+                                    assert!(
+                                        values_by_subclass.unwrap().contains(supclass_deref),
+                                        "{}",
+                                        format!("super class is not contained in sub class set of values: {:?}:{:?}", subclass_deref, supclass_deref)
+                                    );
+                                }
+                                _ => {}
+                            },
                             _ => {}
                         });
-                        let io_subclassofs: Vec<_> = io.into_iter().filter(|a| a.axiom.kind() == AxiomKind::SubClassOf).map(|a| a.axiom).collect();
-                        io_subclassofs.iter().for_each(|e| match e {
-                            hm::Axiom::SubClassOf(ax) => {
-                                match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
-                                    (Some(subclass), Some(superclass)) => {
-                                        let ci = concept_inclusion(&subclass, &superclass);
-                                        println!("{:?}", ci);
-                                        assert!(!asserted_whelk_axioms.iter().contains(&ci));
-                                    }
-                                    _ => {}
-                                };
-                            }
+
+                        let invalid_whelk_axioms = crate::translate_ontology(&io);
+
+                        invalid_whelk_axioms.iter().map(|a| Rc::deref(a)).for_each(|a| match a {
+                            wm::Axiom::ConceptInclusion(ci) => match (Rc::deref(&ci.subclass), Rc::deref(&ci.superclass)) {
+                                (Concept::AtomicConcept(sub), Concept::AtomicConcept(sup)) => {
+                                    let subclass_deref = ci.subclass.deref();
+                                    let supclass_deref = ci.superclass.deref();
+                                    assert!(!whelk_subs_by_subclass.contains_key(subclass_deref));
+                                    assert!(!whelk_subs_by_subclass.contains_key(supclass_deref));
+                                }
+                                _ => {}
+                            },
                             _ => {}
                         });
                     }
                     (Some(ao), Some(eo), None) => {
                         let asserted_whelk_axioms = crate::translate_ontology(&ao);
-                        let eo_subclassofs: Vec<_> = eo.into_iter().filter(|a| a.axiom.kind() == AxiomKind::SubClassOf).map(|a| a.axiom).collect();
-                        eo_subclassofs.iter().for_each(|e| match e {
-                            hm::Axiom::SubClassOf(ax) => {
-                                match (convert_expression(&ax.sub), convert_expression(&ax.sup)) {
-                                    (Some(subclass), Some(superclass)) => {
-                                        let ci = concept_inclusion(&subclass, &superclass);
-                                        println!("{:?}", ci);
-                                        assert!(asserted_whelk_axioms.iter().contains(&ci));
-                                    }
-                                    _ => {}
-                                };
-                            }
+
+                        let whelk = whelk::whelk::reasoner::assert(&asserted_whelk_axioms);
+                        let whelk_subs_by_subclass = whelk.closure_subs_by_subclass;
+                        // whelk_subs_by_subclass.iter().for_each(|a| println!("subclass: {:?}", a));
+
+                        let entailed_whelk_axioms = crate::translate_ontology(&eo);
+                        entailed_whelk_axioms.iter().map(|a| Rc::deref(a)).for_each(|a| match a {
+                            wm::Axiom::ConceptInclusion(ci) => match (Rc::deref(&ci.subclass), Rc::deref(&ci.superclass)) {
+                                (Concept::AtomicConcept(sub), Concept::AtomicConcept(sup)) => {
+                                    let subclass_deref = ci.subclass.deref();
+                                    let supclass_deref = ci.superclass.deref();
+                                    assert!(whelk_subs_by_subclass.contains_key(subclass_deref));
+                                    assert!(whelk_subs_by_subclass.contains_key(supclass_deref));
+                                    let values_by_subclass = whelk_subs_by_subclass.get(subclass_deref);
+                                    assert!(values_by_subclass.is_some(), "{}", format!("sub class key is not found: {:?}", subclass_deref));
+                                    assert!(
+                                        values_by_subclass.unwrap().contains(supclass_deref),
+                                        "{}",
+                                        format!("super class is not contained in sub class set of values: {:?}:{:?}", subclass_deref, supclass_deref)
+                                    );
+                                }
+                                _ => {}
+                            },
                             _ => {}
                         });
                     }
                     _ => {}
                 }
-            }
-        };
+            });
     }
-
-    subclassof_test!(test_for_subclassof_go_extract, "go-extract");
-    subclassof_test!(test_for_subclassof_skeletons, "skeletons");
 }
