@@ -16,7 +16,7 @@ pub struct ReasonerState {
     inits: HashSet<Rc<Concept>>,
     asserted_concept_inclusions_by_subclass: HashMap<Rc<Concept>, Vector<Rc<ConceptInclusion>>>,
     closure_subs_by_superclass: HashMap<Rc<Concept>, HashSet<Rc<Concept>>>,
-    closure_subs_by_subclass: HashMap<Rc<Concept>, HashSet<Rc<Concept>>>,
+    pub closure_subs_by_subclass: HashMap<Rc<Concept>, HashSet<Rc<Concept>>>,
     asserted_negative_conjunctions: HashSet<Rc<Conjunction>>,
     asserted_negative_conjunctions_by_right_operand: HashMap<Rc<Concept>, HashMap<Rc<Concept>, Rc<Conjunction>>>,
     asserted_negative_conjunctions_by_left_operand: HashMap<Rc<Concept>, HashMap<Rc<Concept>, Rc<Conjunction>>>,
