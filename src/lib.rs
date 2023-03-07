@@ -1,3 +1,5 @@
+extern crate log;
+
 use horned_owl::io::ParserConfiguration;
 use horned_owl::model::RcStr;
 use horned_owl::ontology::set::SetOntology;
