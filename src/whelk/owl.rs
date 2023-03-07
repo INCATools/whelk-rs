@@ -250,7 +250,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobal
     }
 }
 
-pub fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -> Rc<wm::Axiom> {
+fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -> Rc<wm::Axiom> {
     Rc::new(wm::Axiom::ConceptInclusion(Rc::new(wm::ConceptInclusion { subclass: Rc::clone(subclass), superclass: Rc::clone(superclass) })))
 }
 
