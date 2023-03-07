@@ -610,10 +610,10 @@ fn rule_complement(complement: &Complement) -> HashSet<Rc<ConceptInclusion>> {
 }
 
 fn saturate_roles(role_inclusions: HashSet<Rc<RoleInclusion>>, all_roles: &HashSet<Rc<Role>>) -> HashMap<Rc<Role>, HashSet<Rc<Role>>> {
-    let grouped = role_inclusions.iter().group_by(|ri| &ri.subproperty);
+    let grouped = role_inclusions.iter().into_group_map_by(|ri| &ri.subproperty);
     let mut sub_to_super: HashMap<Rc<Role>, HashSet<Rc<Role>>> = HashMap::new();
     for (sub, ris) in &grouped {
-        let supers = ris.map(|ri| Rc::clone(&ri.superproperty)).collect();
+        let supers = ris.iter().map(|ri| Rc::clone(&ri.superproperty)).collect();
         sub_to_super.insert(Rc::clone(sub), supers);
     }
     let mut result = HashMap::new();
