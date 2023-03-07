@@ -2,18 +2,11 @@
 extern crate log;
 
 use clap::Parser;
-use horned_owl::io::ParserConfiguration;
-use horned_owl::model::RcStr;
-use horned_owl::ontology::set::SetOntology;
 use humantime::format_duration;
-use im::hashset;
 use std::error;
-use std::fs::File;
-use std::io::BufReader;
 use std::path;
 use std::time;
 use whelk::read_input;
-use whelk::whelk::model::AtomicConcept;
 use whelk::whelk::owl::translate_ontology;
 use whelk::whelk::reasoner::assert;
 
