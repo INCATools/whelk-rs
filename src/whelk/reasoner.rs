@@ -708,6 +708,7 @@ fn index_role_compositions(hier: &HashMap<Rc<Role>, HashSet<Rc<Role>>>, chains: 
 mod test {
     use crate::read_input;
     use crate::whelk::model as wm;
+    use crate::whelk::model::TOP;
     use crate::whelk::owl::translate_ontology;
     use crate::whelk::reasoner::assert;
     use horned_owl::model::RcStr;
@@ -774,7 +775,7 @@ mod test {
         let assert_invalid_whelk_axioms_exist_in_map = |whelk_subs_by_subclass: &HashMap<Rc<wm::Concept>, HashSet<Rc<wm::Concept>>>, whelk_axioms: &HashSet<Rc<wm::Axiom>>| -> () {
             whelk_axioms.iter().map(|a| Rc::deref(a)).for_each(|a| match a {
                 wm::Axiom::ConceptInclusion(ci) => match (Rc::deref(&ci.subclass), Rc::deref(&ci.superclass)) {
-                    (wm::Concept::AtomicConcept(sub), wm::Concept::AtomicConcept(sup)) => {
+                    (wm::Concept::AtomicConcept(sub), wm::Concept::AtomicConcept(sup)) if sup.id != TOP.to_string() => {
                         let subclass_deref = ci.subclass.deref();
                         let supclass_deref = ci.superclass.deref();
                         if let Some(values_by_subclass) = whelk_subs_by_subclass.get(subclass_deref) {
