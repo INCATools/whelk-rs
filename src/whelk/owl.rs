@@ -263,7 +263,7 @@ fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -
 //       //scowl is missing DataHasValue
 //       case dhv: OWLDataHasValue => Some(DataHasValue(DataRole(dhv.getProperty.asOWLDataProperty.getIRI.toString), dhv.getFiller))
 
-fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>) -> Option<Rc<wm::Concept>> {
+pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>) -> Option<Rc<wm::Concept>> {
     match expression {
         hm::ClassExpression::Class(hm::Class(iri)) => {
             let id = iri.to_string();

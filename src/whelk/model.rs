@@ -1,6 +1,12 @@
 use std::rc::Rc;
 
 use im::{hashset, HashSet};
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref TOP: &'static str = "http://www.w3.org/2002/07/owl#Thing";
+    pub static ref BOTTOM: &'static str = "http://www.w3.org/2002/07/owl#Nothing";
+}
 
 pub trait HasSignature {
     fn signature(&self) -> HashSet<Rc<Entity>>;
@@ -184,6 +190,3 @@ pub enum QueueExpression {
     SubPlus(Rc<ConceptInclusion>),
     Link { subject: Rc<Concept>, role: Rc<Role>, target: Rc<Concept> },
 }
-
-pub const TOP: &str = "http://www.w3.org/2002/07/owl#Thing";
-pub const BOTTOM: &str = "http://www.w3.org/2002/07/owl#Nothing";
