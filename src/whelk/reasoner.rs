@@ -777,8 +777,13 @@ mod test {
                     (wm::Concept::AtomicConcept(sub), wm::Concept::AtomicConcept(sup)) => {
                         let subclass_deref = ci.subclass.deref();
                         let supclass_deref = ci.superclass.deref();
-                        assert!(!whelk_subs_by_subclass.contains_key(subclass_deref));
-                        assert!(!whelk_subs_by_subclass.contains_key(supclass_deref));
+                        if let Some(values_by_subclass) = whelk_subs_by_subclass.get(subclass_deref) {
+                            assert!(
+                                !values_by_subclass.contains(supclass_deref),
+                                "{}",
+                                format!("{:?} should not be contained in subclass set with key {:?}", supclass_deref, subclass_deref)
+                            );
+                        }
                     }
                     _ => {}
                 },
