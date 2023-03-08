@@ -760,9 +760,9 @@ mod test {
                             let values_by_subclass = whelk_subs_by_subclass.get(subclass_deref);
                             assert!(values_by_subclass.is_some(), "{}", format!("values by subclass key is not found: {:?}", subclass_deref));
                             assert!(
-                                !values_by_subclass.unwrap().contains(supclass_deref),
+                                values_by_subclass.unwrap().contains(supclass_deref),
                                 "{}",
-                                format!("{:?} is contained in subclass set with key {:?}", supclass_deref, subclass_deref)
+                                format!("{:?} should be contained in subclass set with key {:?}", supclass_deref, subclass_deref)
                             );
                         }
                         _ => {}
