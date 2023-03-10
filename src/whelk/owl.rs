@@ -11,7 +11,7 @@ struct OWLGlobals {
     nothing: Rc<wm::Concept>,
 }
 
-pub fn translate_ontology<A: ForIRI>(ontology: &SetOntology<A>) -> HashSet<Rc<wm::Axiom>> {
+pub fn translate_ontology<A: ForIRI>(ontology: &SetOntology<A>) -> HashSet<wm::Axiom> {
     let globals = make_globals();
     ontology.iter().flat_map(|ann_axiom| translate_axiom_internal(&ann_axiom.axiom, &globals)).collect()
 }
@@ -23,11 +23,11 @@ fn make_globals() -> OWLGlobals {
     }
 }
 
-pub fn translate_axiom<A: ForIRI>(axiom: &hm::Axiom<A>) -> HashSet<Rc<wm::Axiom>> {
+pub fn translate_axiom<A: ForIRI>(axiom: &hm::Axiom<A>) -> HashSet<wm::Axiom> {
     translate_axiom_internal(axiom, &make_globals())
 }
 
-fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobals) -> HashSet<Rc<wm::Axiom>> {
+fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobals) -> HashSet<wm::Axiom> {
     match axiom {
         hm::Axiom::DeclareClass(hm::DeclareClass(hm::Class(iri))) => {
             let subclass = Rc::new(wm::Concept::AtomicConcept(Rc::new(wm::AtomicConcept { id: iri.to_string() })));
@@ -93,7 +93,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobal
         }) => {
             let sub_role = Rc::new(wm::Role { id: sub.to_string() });
             let sup_role = Rc::new(wm::Role { id: sup.to_string() });
-            HashSet::unit(Rc::new(wm::Axiom::RoleInclusion(Rc::new(wm::RoleInclusion { subproperty: sub_role, superproperty: sup_role }))))
+            HashSet::unit(wm::Axiom::RoleInclusion(Rc::new(wm::RoleInclusion { subproperty: sub_role, superproperty: sup_role })))
         }
         hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
             sub: hm::SubObjectPropertyExpression::ObjectPropertyChain(props),
@@ -120,11 +120,11 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobal
                             Some(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(second_id))),
                         ) => {
                             if props_len < 3 {
-                                HashSet::unit(Rc::new(wm::Axiom::RoleComposition(Rc::new(wm::RoleComposition {
+                                HashSet::unit(wm::Axiom::RoleComposition(Rc::new(wm::RoleComposition {
                                     first: Rc::new(wm::Role { id: first_id.to_string() }),
                                     second: Rc::new(wm::Role { id: second_id.to_string() }),
                                     superproperty: Rc::new(wm::Role { id: sup.to_string() }),
-                                }))))
+                                })))
                             } else {
                                 let composition_property_id = format!("{}{}:{}", wm::Role::composition_role_prefix(), first_id, second_id);
                                 let comp_iri = hm::Build::new().iri(composition_property_id);
@@ -250,8 +250,8 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, globals: &OWLGlobal
     }
 }
 
-fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -> Rc<wm::Axiom> {
-    Rc::new(wm::Axiom::ConceptInclusion(Rc::new(wm::ConceptInclusion { subclass: Rc::clone(subclass), superclass: Rc::clone(superclass) })))
+fn concept_inclusion(subclass: &Rc<wm::Concept>, superclass: &Rc<wm::Concept>) -> wm::Axiom {
+    wm::Axiom::ConceptInclusion(Rc::new(wm::ConceptInclusion { subclass: Rc::clone(subclass), superclass: Rc::clone(superclass) }))
 }
 
 //       case ObjectHasSelf(ObjectProperty(prop))                        => Some(SelfRestriction(Role(prop.toString)))

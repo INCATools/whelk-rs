@@ -12,7 +12,7 @@ pub trait HasSignature {
     fn signature(&self) -> HashSet<Rc<Entity>>;
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct Role {
     pub id: String,
 }
@@ -28,29 +28,29 @@ pub struct Individual {
     pub id: String,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct AtomicConcept {
     pub id: String,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct ExistentialRestriction {
     pub role: Rc<Role>,
     pub concept: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct Conjunction {
     pub left: Rc<Concept>,
     pub right: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct Disjunction {
     pub operands: HashSet<Rc<Concept>>,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct SelfRestriction {
     pub role: Rc<Role>,
 }
@@ -94,27 +94,27 @@ pub enum Concept {
 }
 
 impl Concept {
-    pub fn concept_signature(&self) -> HashSet<Rc<Concept>> {
+    pub fn concept_signature(&self) -> HashSet<Concept> {
         match self {
-            Concept::AtomicConcept(_) => HashSet::unit(Rc::new(self.clone())),
+            Concept::AtomicConcept(_) => HashSet::unit(self.clone()),
             Concept::Conjunction(conjunction) => {
                 let mut sig = conjunction.left.concept_signature().union(conjunction.right.concept_signature());
-                sig.insert(Rc::new(self.clone()));
+                sig.insert(self.clone());
                 sig
             }
             Concept::Disjunction(disjunction) => disjunction.operands.iter().flat_map(|o| o.concept_signature()).collect(),
             Concept::ExistentialRestriction(er) => {
                 let mut sig = er.concept.concept_signature();
-                sig.insert(Rc::new(self.clone()));
+                sig.insert(self.clone());
                 sig
             }
-            Concept::SelfRestriction(_) => HashSet::unit(Rc::new(self.clone())),
+            Concept::SelfRestriction(_) => HashSet::unit(self.clone()),
             Concept::Complement(complement) => {
                 let mut sig = complement.concept.concept_signature();
-                sig.insert(Rc::new(self.clone()));
+                sig.insert(self.clone());
                 sig
             }
-            Concept::Nominal(_) => HashSet::unit(Rc::new(self.clone())),
+            Concept::Nominal(_) => HashSet::unit(self.clone()),
         }
     }
 
@@ -145,26 +145,26 @@ impl HasSignature for Concept {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct ConceptInclusion {
     pub subclass: Rc<Concept>,
     pub superclass: Rc<Concept>,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct RoleInclusion {
     pub subproperty: Rc<Role>,
     pub superproperty: Rc<Role>,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct RoleComposition {
     pub first: Rc<Role>,
     pub second: Rc<Role>,
     pub superproperty: Rc<Role>,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub enum Axiom {
     ConceptInclusion(Rc<ConceptInclusion>),
     RoleInclusion(Rc<RoleInclusion>),
@@ -185,8 +185,8 @@ impl HasSignature for Axiom {
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub enum QueueExpression {
-    Concept(Rc<Concept>),
-    ConceptInclusion(Rc<ConceptInclusion>),
-    SubPlus(Rc<ConceptInclusion>),
-    Link { subject: Rc<Concept>, role: Rc<Role>, target: Rc<Concept> },
+    Concept(Concept),
+    ConceptInclusion(ConceptInclusion),
+    SubPlus(ConceptInclusion),
+    Link { subject: Concept, role: Role, target: Concept },
 }
