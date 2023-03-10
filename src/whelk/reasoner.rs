@@ -753,6 +753,7 @@ mod test {
 
         let assert_entailed_whelk_axioms_exist_in_map =
             |whelk_subs_by_subclass: &HashMap<Rc<wm::Concept>, HashSet<Rc<wm::Concept>>>, whelk_axioms: &HashSet<Rc<wm::Axiom>>| -> () {
+                let mut subs_checked = 0;
                 whelk_axioms.iter().map(|a| Rc::deref(a)).for_each(|a| match a {
                     wm::Axiom::ConceptInclusion(ci) => match (Rc::deref(&ci.subclass), Rc::deref(&ci.superclass)) {
                         (wm::Concept::AtomicConcept(sub), wm::Concept::AtomicConcept(sup)) => {
@@ -760,6 +761,7 @@ mod test {
                             let supclass_deref = ci.superclass.deref();
                             let values_by_subclass = whelk_subs_by_subclass.get(subclass_deref);
                             assert!(values_by_subclass.is_some(), "{}", format!("values by subclass key is not found: {:?}", subclass_deref));
+                            subs_checked += 1;
                             assert!(
                                 values_by_subclass.unwrap().contains(supclass_deref),
                                 "{}",
@@ -770,9 +772,11 @@ mod test {
                     },
                     _ => {}
                 });
+                println!("Checked {} entailed subsumptions", subs_checked);
             };
 
         let assert_invalid_whelk_axioms_exist_in_map = |whelk_subs_by_subclass: &HashMap<Rc<wm::Concept>, HashSet<Rc<wm::Concept>>>, whelk_axioms: &HashSet<Rc<wm::Axiom>>| -> () {
+            let mut subs_checked = 0;
             whelk_axioms.iter().map(|a| Rc::deref(a)).for_each(|a| match a {
                 wm::Axiom::ConceptInclusion(ci) => match (Rc::deref(&ci.subclass), Rc::deref(&ci.superclass)) {
                     (wm::Concept::AtomicConcept(sub), wm::Concept::AtomicConcept(sup)) if sup.id != TOP.to_string() => {
@@ -784,12 +788,14 @@ mod test {
                                 "{}",
                                 format!("{:?} should not be contained in subclass set with key {:?}", supclass_deref, subclass_deref)
                             );
+                            subs_checked += 1;
                         }
                     }
                     _ => {}
                 },
                 _ => {}
             });
+            println!("Checked {} invalid subsumptions", subs_checked);
         };
 
         let test_directories: Vec<path::PathBuf> = read_dir_results
