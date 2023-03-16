@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Jim Balhoff <balhoff@renci.org>"]
 edition = "2021"
 
+[profile.release]
+debug = 1
+
 [dependencies]
 curie = "^0.1"
 clap = { version = "^4.1", features = ["derive"] }
