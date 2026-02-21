@@ -409,12 +409,18 @@ fn rule_plus_and_b(new_negative_conjunctions: Vec<ConceptId>, state: &ReasonerSt
             let right = *right;
             if let Some(left_subclasses) = state.closure_subs_by_superclass.get(&left) {
                 if let Some(right_subclasses) = state.closure_subs_by_superclass.get(&right) {
-                    let common = left_subclasses.clone().intersection(right_subclasses.clone());
-                    for c in common {
-                        todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                            subclass: c,
-                            superclass: conjunction_id,
-                        }));
+                    let (smaller, larger) = if left_subclasses.len() <= right_subclasses.len() {
+                        (left_subclasses, right_subclasses)
+                    } else {
+                        (right_subclasses, left_subclasses)
+                    };
+                    for &c in smaller {
+                        if larger.contains(&c) {
+                            todo.push(QueueExpression::SubPlus(ConceptInclusion {
+                                subclass: c,
+                                superclass: conjunction_id,
+                            }));
+                        }
                     }
                 }
             }
