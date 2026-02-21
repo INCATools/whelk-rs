@@ -1,11 +1,10 @@
 use crate::whelk::model::{
-    ConceptData, ConceptId, ConceptInclusion, Interner, RoleComposition, RoleInclusion,
+    ConceptData, ConceptId, ConceptInclusion, HashSet, Interner, RoleComposition, RoleInclusion,
     TranslatedOntology, COMPOSITION_ROLE_PREFIX,
 };
 use horned_owl::model as hm;
 use horned_owl::model::ForIRI;
 use horned_owl::ontology::set::SetOntology;
-use im::HashSet;
 use itertools::Itertools;
 
 struct AxiomSet {
@@ -17,17 +16,17 @@ struct AxiomSet {
 impl AxiomSet {
     fn new() -> Self {
         AxiomSet {
-            concept_inclusions: HashSet::new(),
-            role_inclusions: HashSet::new(),
-            role_compositions: HashSet::new(),
+            concept_inclusions: Default::default(),
+            role_inclusions: Default::default(),
+            role_compositions: Default::default(),
         }
     }
 
     fn ci(ci: ConceptInclusion) -> Self {
         AxiomSet {
-            concept_inclusions: HashSet::unit(ci),
-            role_inclusions: HashSet::new(),
-            role_compositions: HashSet::new(),
+            concept_inclusions: std::iter::once(ci).collect(),
+            role_inclusions: Default::default(),
+            role_compositions: Default::default(),
         }
     }
 
@@ -113,9 +112,9 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             let subproperty = interner.intern_role(sub.as_ref());
             let superproperty = interner.intern_role(sup.as_ref());
             AxiomSet {
-                concept_inclusions: HashSet::new(),
-                role_inclusions: HashSet::unit(RoleInclusion { subproperty, superproperty }),
-                role_compositions: HashSet::new(),
+                concept_inclusions: Default::default(),
+                role_inclusions: std::iter::once(RoleInclusion { subproperty, superproperty }).collect(),
+                role_compositions: Default::default(),
             }
         }
         hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
@@ -144,9 +143,9 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                                 let second = interner.intern_role(second_id.as_ref());
                                 let superproperty = interner.intern_role(sup.as_ref());
                                 AxiomSet {
-                                    concept_inclusions: HashSet::new(),
-                                    role_inclusions: HashSet::new(),
-                                    role_compositions: HashSet::unit(RoleComposition { first, second, superproperty }),
+                                    concept_inclusions: Default::default(),
+                                    role_inclusions: Default::default(),
+                                    role_compositions: std::iter::once(RoleComposition { first, second, superproperty }).collect(),
                                 }
                             } else {
                                 let composition_property_id = format!("{}{}:{}", COMPOSITION_ROLE_PREFIX, first_id, second_id);

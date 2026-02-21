@@ -1,9 +1,8 @@
-use im::{hashmap, hashset, vector, HashMap, HashSet, Vector};
 use itertools::Itertools;
 
 use crate::whelk::model::{
-    ConceptData, ConceptId, ConceptInclusion, Interner, QueueExpression, RoleComposition,
-    RoleId, RoleInclusion, TranslatedOntology,
+    ConceptData, ConceptId, ConceptInclusion, HashMap, HashSet, Interner, QueueExpression,
+    RoleComposition, RoleId, RoleInclusion, TranslatedOntology, Vector,
 };
 
 #[derive(Clone, Debug)]
@@ -42,8 +41,8 @@ impl ReasonerState {
             hier_comps: Default::default(),
             inits: Default::default(),
             asserted_concept_inclusions_by_subclass: Default::default(),
-            closure_subs_by_superclass: hashmap! {bottom => HashSet::new()},
-            closure_subs_by_subclass: hashmap! {top => HashSet::new()},
+            closure_subs_by_superclass: std::iter::once((bottom, Default::default())).collect(),
+            closure_subs_by_subclass: std::iter::once((top, Default::default())).collect(),
             asserted_negative_conjunctions: Default::default(),
             asserted_negative_conjunctions_by_right_operand: Default::default(),
             asserted_negative_conjunctions_by_left_operand: Default::default(),
@@ -92,7 +91,7 @@ pub fn assert(ontology: &TranslatedOntology) -> ReasonerState {
     let interner = ontology.interner.clone();
 
     // Collect all roles from role inclusions, compositions, and concept signatures
-    let mut all_roles: HashSet<RoleId> = HashSet::new();
+    let mut all_roles: HashSet<RoleId> = Default::default();
     for ri in &ontology.role_inclusions {
         all_roles.insert(ri.subproperty);
         all_roles.insert(ri.superproperty);
@@ -136,7 +135,7 @@ pub fn assert_append(axioms: &HashSet<ConceptInclusion>, state: &ReasonerState) 
         .copied()
         .collect();
 
-    let mut additional_axioms: HashSet<ConceptInclusion> = HashSet::new();
+    let mut additional_axioms: HashSet<ConceptInclusion> = Default::default();
     for &c in &distinct_concepts {
         match new_state.interner.concept_data(c).clone() {
             ConceptData::Disjunction(operands) => {
@@ -180,7 +179,7 @@ fn compute_closure(state: &mut ReasonerState, assertions_queue: Vec<ConceptInclu
 fn process_asserted_concept_inclusion(ci: ConceptInclusion, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
     match state.asserted_concept_inclusions_by_subclass.get_mut(&ci.subclass) {
         None => {
-            state.asserted_concept_inclusions_by_subclass.insert(ci.subclass, vector![ci]);
+            state.asserted_concept_inclusions_by_subclass.insert(ci.subclass, std::iter::once(ci).collect());
         }
         Some(vec) => {
             vec.push_back(ci);
@@ -211,7 +210,7 @@ fn process_concept(concept: ConceptId, state: &mut ReasonerState, todo: &mut Vec
     if !state.inits.contains(&concept) {
         match state.closure_subs_by_subclass.get_mut(&state.bottom) {
             None => {
-                state.closure_subs_by_subclass.insert(state.bottom, hashset![concept]);
+                state.closure_subs_by_subclass.insert(state.bottom, std::iter::once(concept).collect());
             }
             Some(super_classes_of_bottom) => {
                 super_classes_of_bottom.insert(concept);
@@ -226,7 +225,7 @@ fn process_concept(concept: ConceptId, state: &mut ReasonerState, todo: &mut Vec
 fn process_concept_inclusion(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) -> bool {
     let seen = match state.closure_subs_by_superclass.get_mut(&ci.superclass) {
         None => {
-            state.closure_subs_by_superclass.insert(ci.superclass, hashset![ci.subclass]);
+            state.closure_subs_by_superclass.insert(ci.superclass, std::iter::once(ci.subclass).collect());
             false
         }
         Some(subs) => subs.insert(ci.subclass).is_some(),
@@ -234,7 +233,7 @@ fn process_concept_inclusion(ci: &ConceptInclusion, state: &mut ReasonerState, t
     if !seen {
         match state.closure_subs_by_subclass.get_mut(&ci.subclass) {
             None => {
-                state.closure_subs_by_subclass.insert(ci.subclass, hashset![ci.superclass]);
+                state.closure_subs_by_subclass.insert(ci.subclass, std::iter::once(ci.superclass).collect());
             }
             Some(supers) => {
                 supers.insert(ci.superclass);
@@ -259,12 +258,13 @@ fn process_link(subject: ConceptId, role: RoleId, target: ConceptId, state: &mut
         Some(roles_to_targets) => match roles_to_targets.get_mut(&role) {
             Some(targets) => targets.insert(target).is_some(),
             None => {
-                roles_to_targets.insert(role, hashset![target]);
+                roles_to_targets.insert(role, std::iter::once(target).collect());
                 false
             }
         },
         None => {
-            state.links_by_subject.insert(subject, hashmap! {role => hashset![target]});
+            let inner: HashMap<RoleId, HashSet<ConceptId>> = std::iter::once((role, std::iter::once(target).collect())).collect();
+            state.links_by_subject.insert(subject, inner);
             false
         }
     };
@@ -275,11 +275,12 @@ fn process_link(subject: ConceptId, role: RoleId, target: ConceptId, state: &mut
                     subjects.push_back(subject);
                 }
                 None => {
-                    role_to_subjects.insert(role, vector![subject]);
+                    role_to_subjects.insert(role, std::iter::once(subject).collect());
                 }
             },
             None => {
-                state.links_by_target.insert(target, hashmap! {role => vector![subject]});
+                let inner: HashMap<RoleId, Vector<ConceptId>> = std::iter::once((role, std::iter::once(subject).collect())).collect();
+                state.links_by_target.insert(target, inner);
             }
         }
         rule_bottom_right(subject, target, state, todo);
@@ -378,7 +379,7 @@ fn rule_plus_and_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut 
                 state.asserted_negative_conjunctions.insert(c);
                 match state.asserted_negative_conjunctions_by_left_operand.get_mut(&left) {
                     None => {
-                        state.asserted_negative_conjunctions_by_left_operand.insert(left, hashmap! {right => c});
+                        state.asserted_negative_conjunctions_by_left_operand.insert(left, std::iter::once((right, c)).collect());
                     }
                     Some(by_right) => {
                         by_right.insert(right, c);
@@ -386,7 +387,7 @@ fn rule_plus_and_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut 
                 }
                 match state.asserted_negative_conjunctions_by_right_operand.get_mut(&right) {
                     None => {
-                        state.asserted_negative_conjunctions_by_right_operand.insert(right, hashmap! {left => c});
+                        state.asserted_negative_conjunctions_by_right_operand.insert(right, std::iter::once((left, c)).collect());
                     }
                     Some(by_left) => {
                         by_left.insert(left, c);
@@ -499,7 +500,7 @@ fn rule_plus_some_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut
                         ers.insert(c);
                     }
                     None => {
-                        state.negative_existential_restrictions_by_concept.insert(concept, hashset![c]);
+                        state.negative_existential_restrictions_by_concept.insert(concept, std::iter::once(c).collect());
                     }
                 }
                 Some(c)
@@ -526,11 +527,12 @@ fn rule_plus_some_b_left(new_negative_existentials: Vec<ConceptId>, state: &mut 
                                 ers.push_back(er_id);
                             }
                             None => {
-                                roles_to_ers.insert(role, vector![er_id]);
+                                roles_to_ers.insert(role, std::iter::once(er_id).collect());
                             }
                         },
                         None => {
-                            state.propagations.insert(subclass, hashmap! {role => vector![er_id]});
+                            let inner: HashMap<RoleId, Vector<ConceptId>> = std::iter::once((role, std::iter::once(er_id).collect())).collect();
+                            state.propagations.insert(subclass, inner);
                         }
                     }
                 }
@@ -554,11 +556,12 @@ fn rule_plus_some_b_right(ci: &ConceptInclusion, state: &mut ReasonerState, todo
                             ers.push_back(er_id);
                         }
                         None => {
-                            roles_to_ers.insert(role, vector![er_id]);
+                            roles_to_ers.insert(role, std::iter::once(er_id).collect());
                         }
                     },
                     None => {
-                        state.propagations.insert(ci.subclass, hashmap! {role => vector![er_id]});
+                        let inner: HashMap<RoleId, Vector<ConceptId>> = std::iter::once((role, std::iter::once(er_id).collect())).collect();
+                        state.propagations.insert(ci.subclass, inner);
                     }
                 }
             }
@@ -669,20 +672,20 @@ fn rule_complement(inner: ConceptId, bottom: ConceptId) -> ConceptInclusion {
 
 fn saturate_roles(role_inclusions: &HashSet<RoleInclusion>, all_roles: &HashSet<RoleId>) -> HashMap<RoleId, HashSet<RoleId>> {
     let grouped = role_inclusions.iter().into_group_map_by(|ri| ri.subproperty);
-    let mut sub_to_super: HashMap<RoleId, HashSet<RoleId>> = HashMap::new();
+    let mut sub_to_super: HashMap<RoleId, HashSet<RoleId>> = Default::default();
     for (sub, ris) in &grouped {
         let supers: HashSet<RoleId> = ris.iter().map(|ri| ri.superproperty).collect();
         sub_to_super.insert(*sub, supers);
     }
-    let mut result = HashMap::new();
+    let mut result: HashMap<RoleId, HashSet<RoleId>> = Default::default();
     for &role in sub_to_super.keys() {
-        let all_supers = all_super_roles(role, &HashSet::new(), &sub_to_super);
+        let all_supers = all_super_roles(role, &Default::default(), &sub_to_super);
         result.insert(role, all_supers);
     }
     for &role in all_roles {
         match result.get_mut(&role) {
             None => {
-                result.insert(role, hashset![role]);
+                result.insert(role, std::iter::once(role).collect());
             }
             Some(supers) => {
                 supers.insert(role);
@@ -694,7 +697,7 @@ fn saturate_roles(role_inclusions: &HashSet<RoleInclusion>, all_roles: &HashSet<
 
 fn all_super_roles(role: RoleId, exclude: &HashSet<RoleId>, sub_to_super: &HashMap<RoleId, HashSet<RoleId>>) -> HashSet<RoleId> {
     let current_exclude = exclude.update(role);
-    let mut result = HashSet::new();
+    let mut result: HashSet<RoleId> = Default::default();
     if let Some(supers) = sub_to_super.get(&role) {
         for &super_prop in supers.iter().filter(|sp| !current_exclude.contains(sp)) {
             let all_supers_reflexive = all_super_roles(super_prop, &current_exclude, sub_to_super).update(super_prop);
@@ -708,12 +711,12 @@ fn all_super_roles(role: RoleId, exclude: &HashSet<RoleId>, sub_to_super: &HashM
 
 fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &HashSet<RoleComposition>) -> HashMap<RoleId, HashMap<RoleId, Vector<RoleId>>> {
     let role_comps_groups = chains.iter().group_by(|rc| (rc.first, rc.second));
-    let mut role_comps: HashMap<(RoleId, RoleId), HashSet<RoleId>> = HashMap::new();
+    let mut role_comps: HashMap<(RoleId, RoleId), HashSet<RoleId>> = Default::default();
     for (chain, group) in &role_comps_groups {
         let supers: HashSet<RoleId> = group.map(|rc| rc.superproperty).collect();
         role_comps.insert(chain, supers);
     }
-    let mut hier_comps_tuples: HashSet<(RoleId, RoleId, RoleId)> = HashSet::new();
+    let mut hier_comps_tuples: HashSet<(RoleId, RoleId, RoleId)> = Default::default();
     for (&r1, s1s) in hier {
         for &s1 in s1s {
             for (&r2, s2s) in hier {
@@ -727,7 +730,7 @@ fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &Has
             }
         }
     }
-    let mut hier_comps_remove: HashSet<(RoleId, RoleId, RoleId)> = HashSet::new();
+    let mut hier_comps_remove: HashSet<(RoleId, RoleId, RoleId)> = Default::default();
     for &(r1, r2, s) in &hier_comps_tuples {
         for &super_s in hier.get(&s).unwrap() {
             if super_s != s && hier_comps_tuples.contains(&(r1, r2, super_s)) {
@@ -736,7 +739,7 @@ fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &Has
         }
     }
     let hier_comps_tuples_filtered = hier_comps_tuples.relative_complement(hier_comps_remove);
-    let mut hier_comps: HashMap<RoleId, HashMap<RoleId, Vector<RoleId>>> = HashMap::new();
+    let mut hier_comps: HashMap<RoleId, HashMap<RoleId, Vector<RoleId>>> = Default::default();
     for (r1, r2, s) in hier_comps_tuples_filtered {
         match hier_comps.get_mut(&r1) {
             Some(r2_map) => match r2_map.get_mut(&r2) {
@@ -744,11 +747,12 @@ fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &Has
                     ss.push_back(s);
                 }
                 None => {
-                    r2_map.insert(r2, vector![s]);
+                    r2_map.insert(r2, std::iter::once(s).collect());
                 }
             },
             None => {
-                hier_comps.insert(r1, hashmap! {r2 => vector![s]});
+                let inner: HashMap<RoleId, Vector<RoleId>> = std::iter::once((r2, std::iter::once(s).collect())).collect();
+                hier_comps.insert(r1, inner);
             }
         }
     }

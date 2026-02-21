@@ -12,3 +12,4 @@ humantime = "^2.0"
 im = "^15.1"
 itertools = "^0.10"
 log = { version = "^0.4", features = ["std"] }
+rustc-hash = "^2.1"

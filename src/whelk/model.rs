@@ -1,4 +1,8 @@
-use im::{HashMap, HashSet, Vector};
+use rustc_hash::FxBuildHasher;
+
+pub type HashMap<K, V> = im::HashMap<K, V, FxBuildHasher>;
+pub type HashSet<A> = im::HashSet<A, FxBuildHasher>;
+pub type Vector<A> = im::Vector<A>;
 
 pub const TOP: &str = "http://www.w3.org/2002/07/owl#Thing";
 pub const BOTTOM: &str = "http://www.w3.org/2002/07/owl#Nothing";
@@ -44,11 +48,11 @@ impl Interner {
     pub fn new() -> Self {
         let mut interner = Interner {
             roles: Vector::new(),
-            role_ids: HashMap::new(),
+            role_ids: Default::default(),
             individuals: Vector::new(),
-            individual_ids: HashMap::new(),
+            individual_ids: Default::default(),
             concepts: Vector::new(),
-            concept_ids: HashMap::new(),
+            concept_ids: Default::default(),
         };
         // Pre-intern TOP and BOTTOM so they have well-known IDs
         interner.intern_concept(ConceptData::AtomicConcept(TOP.to_string()));
@@ -115,7 +119,7 @@ impl Interner {
 
     pub fn concept_signature(&self, id: ConceptId) -> HashSet<ConceptId> {
         match self.concept_data(id) {
-            ConceptData::AtomicConcept(_) => HashSet::unit(id),
+            ConceptData::AtomicConcept(_) => std::iter::once(id).collect(),
             ConceptData::Conjunction { left, right } => {
                 let left = *left;
                 let right = *right;
@@ -133,20 +137,20 @@ impl Interner {
                 sig.insert(id);
                 sig
             }
-            ConceptData::SelfRestriction(_) => HashSet::unit(id),
+            ConceptData::SelfRestriction(_) => std::iter::once(id).collect(),
             ConceptData::Complement(inner) => {
                 let inner = *inner;
                 let mut sig = self.concept_signature(inner);
                 sig.insert(id);
                 sig
             }
-            ConceptData::Nominal(_) => HashSet::unit(id),
+            ConceptData::Nominal(_) => std::iter::once(id).collect(),
         }
     }
 
     pub fn all_roles_in_concept(&self, id: ConceptId) -> HashSet<RoleId> {
         match self.concept_data(id) {
-            ConceptData::AtomicConcept(_) => HashSet::new(),
+            ConceptData::AtomicConcept(_) => Default::default(),
             ConceptData::Conjunction { left, right } => {
                 let left = *left;
                 let right = *right;
@@ -163,12 +167,12 @@ impl Interner {
                 sig.insert(role);
                 sig
             }
-            ConceptData::SelfRestriction(role) => HashSet::unit(*role),
+            ConceptData::SelfRestriction(role) => std::iter::once(*role).collect(),
             ConceptData::Complement(inner) => {
                 let inner = *inner;
                 self.all_roles_in_concept(inner)
             }
-            ConceptData::Nominal(_) => HashSet::new(),
+            ConceptData::Nominal(_) => Default::default(),
         }
     }
 }
