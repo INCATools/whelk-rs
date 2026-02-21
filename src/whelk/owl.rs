@@ -64,7 +64,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             AxiomSet::ci(ConceptInclusion { subclass, superclass: thing })
         }
         hm::Axiom::DeclareNamedIndividual(hm::DeclareNamedIndividual(hm::NamedIndividual(iri))) => {
-            let ind = interner.intern_individual(&iri.to_string());
+            let ind = interner.intern_individual(iri.as_ref());
             let subclass = interner.intern_concept(ConceptData::Nominal(ind));
             AxiomSet::ci(ConceptInclusion { subclass, superclass: thing })
         }
@@ -110,8 +110,8 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sub))),
             sup: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sup)),
         }) => {
-            let subproperty = interner.intern_role(&sub.to_string());
-            let superproperty = interner.intern_role(&sup.to_string());
+            let subproperty = interner.intern_role(sub.as_ref());
+            let superproperty = interner.intern_role(sup.as_ref());
             AxiomSet {
                 concept_inclusions: HashSet::new(),
                 role_inclusions: HashSet::unit(RoleInclusion { subproperty, superproperty }),
@@ -127,22 +127,22 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                 match props_len {
                     0 => AxiomSet::new(),
                     1 => {
-                        let sub = props.get(0).unwrap().clone();
+                        let sub = props.first().unwrap().clone();
                         let axiom = hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                             sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(sub),
                             sup: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sup.clone())),
                         });
                         translate_axiom_internal(&axiom, interner)
                     }
-                    _ => match (props.get(0), props.get(1)) {
+                    _ => match (props.first(), props.get(1)) {
                         (
                             Some(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(first_id))),
                             Some(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(second_id))),
                         ) => {
                             if props_len < 3 {
-                                let first = interner.intern_role(&first_id.to_string());
-                                let second = interner.intern_role(&second_id.to_string());
-                                let superproperty = interner.intern_role(&sup.to_string());
+                                let first = interner.intern_role(first_id.as_ref());
+                                let second = interner.intern_role(second_id.as_ref());
+                                let superproperty = interner.intern_role(sup.as_ref());
                                 AxiomSet {
                                     concept_inclusions: HashSet::new(),
                                     role_inclusions: HashSet::new(),
@@ -205,7 +205,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             ce: cls,
         }) => {
             if let Some(superclass) = convert_expression(cls, interner) {
-                let role = interner.intern_role(&prop.to_string());
+                let role = interner.intern_role(prop.as_ref());
                 let restriction = interner.intern_concept(ConceptData::ExistentialRestriction { role, concept: thing });
                 AxiomSet::ci(ConceptInclusion { subclass: restriction, superclass })
             } else {
@@ -224,7 +224,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             i: hm::Individual::Named(hm::NamedIndividual(ind)),
         }) => {
             if let Some(superclass) = convert_expression(cls, interner) {
-                let individual = interner.intern_individual(&ind.to_string());
+                let individual = interner.intern_individual(ind.as_ref());
                 let subclass = interner.intern_concept(ConceptData::Nominal(individual));
                 AxiomSet::ci(ConceptInclusion { subclass, superclass })
             } else {
@@ -240,11 +240,11 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                 hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)) => (axiom_subject, prop, axiom_target),
                 hm::ObjectPropertyExpression::InverseObjectProperty(hm::ObjectProperty(prop)) => (axiom_target, prop, axiom_subject),
             };
-            let subject_ind = interner.intern_individual(&subject.to_string());
-            let target_ind = interner.intern_individual(&target.to_string());
+            let subject_ind = interner.intern_individual(subject.as_ref());
+            let target_ind = interner.intern_individual(target.as_ref());
             let subclass = interner.intern_concept(ConceptData::Nominal(subject_ind));
             let target_nominal = interner.intern_concept(ConceptData::Nominal(target_ind));
-            let role = interner.intern_role(&prop.to_string());
+            let role = interner.intern_role(prop.as_ref());
             let superclass = interner.intern_concept(ConceptData::ExistentialRestriction { role, concept: target_nominal });
             AxiomSet::ci(ConceptInclusion { subclass, superclass })
         }
@@ -262,7 +262,7 @@ pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>, intern
             bce: cls,
         } => {
             convert_expression(cls, interner).map(|concept| {
-                let role = interner.intern_role(&prop.to_string());
+                let role = interner.intern_role(prop.as_ref());
                 interner.intern_concept(ConceptData::ExistentialRestriction { role, concept })
             })
         }

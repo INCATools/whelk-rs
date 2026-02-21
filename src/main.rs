@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     debug!("{:?}", options);
 
     let path: &path::PathBuf = &options.input;
-    let ontology = read_input(&path).expect("unable to parse input");
+    let ontology = read_input(path).expect("unable to parse input");
     debug!("Loaded ontology in {}s", start.elapsed().as_secs());
 
     let start_convert = time::Instant::now();

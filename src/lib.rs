@@ -14,7 +14,7 @@ pub mod whelk {
 }
 
 pub fn read_input(input_path: &path::PathBuf) -> Result<SetOntology<RcStr>, Box<dyn error::Error>> {
-    let file = File::open(&input_path)?;
+    let file = File::open(input_path)?;
     let mut bufreader = BufReader::new(file);
     let config = ParserConfiguration::default();
     match input_path.extension().and_then(|s| s.to_str()) {

@@ -84,7 +84,7 @@ impl ReasonerState {
     pub fn is_subclass_of(&self, sub: ConceptId, sup: ConceptId) -> bool {
         self.closure_subs_by_subclass
             .get(&sub)
-            .map_or(false, |supers| supers.contains(&sup))
+            .is_some_and(|supers| supers.contains(&sup))
     }
 }
 

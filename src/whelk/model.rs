@@ -34,6 +34,12 @@ pub struct Interner {
     concept_ids: HashMap<ConceptData, ConceptId>,
 }
 
+impl Default for Interner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Interner {
     pub fn new() -> Self {
         let mut interner = Interner {
