@@ -43,7 +43,7 @@ pub fn translate_ontology<A: ForIRI>(ontology: &SetOntology<A>) -> TranslatedOnt
     let mut interner = Interner::new();
     let mut result = AxiomSet::new();
     for ann_axiom in ontology.iter() {
-        let axioms = translate_axiom_internal(&ann_axiom.axiom, &mut interner);
+        let axioms = translate_axiom_internal(&ann_axiom.component, &mut interner);
         result = result.union(axioms);
     }
     TranslatedOntology {
@@ -54,26 +54,26 @@ pub fn translate_ontology<A: ForIRI>(ontology: &SetOntology<A>) -> TranslatedOnt
     }
 }
 
-fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Interner) -> AxiomSet {
+fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut Interner) -> AxiomSet {
     let thing = interner.top();
     let nothing = interner.bottom();
     match axiom {
-        hm::Axiom::DeclareClass(hm::DeclareClass(hm::Class(iri))) => {
+        hm::Component::DeclareClass(hm::DeclareClass(hm::Class(iri))) => {
             let subclass = interner.intern_concept(ConceptData::AtomicConcept(iri.to_string()));
             AxiomSet::ci(ConceptInclusion { subclass, superclass: thing })
         }
-        hm::Axiom::DeclareNamedIndividual(hm::DeclareNamedIndividual(hm::NamedIndividual(iri))) => {
+        hm::Component::DeclareNamedIndividual(hm::DeclareNamedIndividual(hm::NamedIndividual(iri))) => {
             let ind = interner.intern_individual(iri.as_ref());
             let subclass = interner.intern_concept(ConceptData::Nominal(ind));
             AxiomSet::ci(ConceptInclusion { subclass, superclass: thing })
         }
-        hm::Axiom::SubClassOf(ax) => {
+        hm::Component::SubClassOf(ax) => {
             match (convert_expression(&ax.sub, interner), convert_expression(&ax.sup, interner)) {
                 (Some(subclass), Some(superclass)) => AxiomSet::ci(ConceptInclusion { subclass, superclass }),
                 _ => AxiomSet::new(),
             }
         }
-        hm::Axiom::EquivalentClasses(hm::EquivalentClasses(expressions)) => {
+        hm::Component::EquivalentClasses(hm::EquivalentClasses(expressions)) => {
             let converted: Vec<ConceptId> = expressions.iter().filter_map(|c| convert_expression(c, interner)).collect();
             let mut result = AxiomSet::new();
             for pair in converted.iter().combinations(2) {
@@ -88,7 +88,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             }
             result
         }
-        hm::Axiom::DisjointClasses(hm::DisjointClasses(operands)) => {
+        hm::Component::DisjointClasses(hm::DisjointClasses(operands)) => {
             let converted: Vec<ConceptId> = operands.iter().filter_map(|c| convert_expression(c, interner)).collect();
             let mut result = AxiomSet::new();
             for pair in converted.iter().combinations(2) {
@@ -99,13 +99,13 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             }
             result
         }
-        hm::Axiom::DisjointUnion(hm::DisjointUnion(cls, expressions)) => {
+        hm::Component::DisjointUnion(hm::DisjointUnion(cls, expressions)) => {
             let union = hm::ClassExpression::ObjectUnionOf(expressions.clone());
-            let equivalence = hm::Axiom::EquivalentClasses(hm::EquivalentClasses(vec![hm::ClassExpression::Class(cls.clone()), union]));
-            let disjointness = hm::Axiom::DisjointClasses(hm::DisjointClasses(expressions.clone()));
+            let equivalence = hm::Component::EquivalentClasses(hm::EquivalentClasses(vec![hm::ClassExpression::Class(cls.clone()), union]));
+            let disjointness = hm::Component::DisjointClasses(hm::DisjointClasses(expressions.clone()));
             translate_axiom_internal(&equivalence, interner).union(translate_axiom_internal(&disjointness, interner))
         }
-        hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+        hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
             sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sub))),
             sup: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sup)),
         }) => {
@@ -117,7 +117,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                 role_compositions: Default::default(),
             }
         }
-        hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+        hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
             sub: hm::SubObjectPropertyExpression::ObjectPropertyChain(props),
             sup: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sup)),
         }) => {
@@ -127,7 +127,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                     0 => AxiomSet::new(),
                     1 => {
                         let sub = props.first().unwrap().clone();
-                        let axiom = hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+                        let axiom = hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                             sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(sub),
                             sup: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sup.clone())),
                         });
@@ -152,7 +152,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                                 let comp_iri = hm::Build::new().iri(composition_property_id);
                                 let composition_property = hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(comp_iri));
                                 let beginning_chain = translate_axiom_internal(
-                                    &hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+                                    &hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                                         sub: hm::SubObjectPropertyExpression::ObjectPropertyChain(vec![
                                             hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(first_id.clone())),
                                             hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(second_id.clone())),
@@ -166,7 +166,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                                 new_chain.remove(0);
                                 new_chain.insert(0, composition_property);
                                 let rest_of_chain = translate_axiom_internal(
-                                    &hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+                                    &hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                                         sub: hm::SubObjectPropertyExpression::ObjectPropertyChain(new_chain),
                                         sup: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(sup.clone())),
                                     }),
@@ -182,14 +182,14 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                 AxiomSet::new()
             }
         }
-        hm::Axiom::EquivalentObjectProperties(hm::EquivalentObjectProperties(props)) => {
+        hm::Component::EquivalentObjectProperties(hm::EquivalentObjectProperties(props)) => {
             let mut result = AxiomSet::new();
             for pair in props.iter().combinations(2) {
-                let first_second = hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+                let first_second = hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                     sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(pair[0].clone()),
                     sup: pair[1].clone(),
                 });
-                let second_first = hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+                let second_first = hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                     sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(pair[1].clone()),
                     sup: pair[0].clone(),
                 });
@@ -199,7 +199,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
             }
             result
         }
-        hm::Axiom::ObjectPropertyDomain(hm::ObjectPropertyDomain {
+        hm::Component::ObjectPropertyDomain(hm::ObjectPropertyDomain {
             ope: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)),
             ce: cls,
         }) => {
@@ -211,14 +211,14 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                 AxiomSet::new()
             }
         }
-        hm::Axiom::TransitiveObjectProperty(hm::TransitiveObjectProperty(prop)) => translate_axiom_internal(
-            &hm::Axiom::SubObjectPropertyOf(hm::SubObjectPropertyOf {
+        hm::Component::TransitiveObjectProperty(hm::TransitiveObjectProperty(prop)) => translate_axiom_internal(
+            &hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                 sub: hm::SubObjectPropertyExpression::ObjectPropertyChain(vec![prop.clone(), prop.clone()]),
                 sup: prop.clone(),
             }),
             interner,
         ),
-        hm::Axiom::ClassAssertion(hm::ClassAssertion {
+        hm::Component::ClassAssertion(hm::ClassAssertion {
             ce: cls,
             i: hm::Individual::Named(hm::NamedIndividual(ind)),
         }) => {
@@ -230,7 +230,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Axiom<A>, interner: &mut Inte
                 AxiomSet::new()
             }
         }
-        hm::Axiom::ObjectPropertyAssertion(hm::ObjectPropertyAssertion {
+        hm::Component::ObjectPropertyAssertion(hm::ObjectPropertyAssertion {
             ope: property_expression,
             from: hm::Individual::Named(hm::NamedIndividual(axiom_subject)),
             to: hm::Individual::Named(hm::NamedIndividual(axiom_target)),
