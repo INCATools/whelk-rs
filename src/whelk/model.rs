@@ -1,192 +1,212 @@
-use std::rc::Rc;
+use rustc_hash::FxBuildHasher;
 
-use im::{hashset, HashSet};
-use lazy_static::lazy_static;
+pub type HashMap<K, V> = im::HashMap<K, V, FxBuildHasher>;
+pub type HashSet<A> = im::HashSet<A, FxBuildHasher>;
+pub type Vector<A> = im::Vector<A>;
 
-lazy_static! {
-    pub static ref TOP: &'static str = "http://www.w3.org/2002/07/owl#Thing";
-    pub static ref BOTTOM: &'static str = "http://www.w3.org/2002/07/owl#Nothing";
-}
+pub const TOP: &str = "http://www.w3.org/2002/07/owl#Thing";
+pub const BOTTOM: &str = "http://www.w3.org/2002/07/owl#Nothing";
+pub const COMPOSITION_ROLE_PREFIX: &str = "urn:whelk:composition_role:";
 
-pub trait HasSignature {
-    fn signature(&self) -> HashSet<Rc<Entity>>;
-}
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct RoleId(u32);
 
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Role {
-    pub id: String,
-}
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct ConceptId(u32);
 
-impl Role {
-    pub fn composition_role_prefix() -> &'static str {
-        "urn:whelk:composition_role:"
-    }
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Individual {
-    pub id: String,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct AtomicConcept {
-    pub id: String,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct ExistentialRestriction {
-    pub role: Rc<Role>,
-    pub concept: Rc<Concept>,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Conjunction {
-    pub left: Rc<Concept>,
-    pub right: Rc<Concept>,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Disjunction {
-    pub operands: HashSet<Rc<Concept>>,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct SelfRestriction {
-    pub role: Rc<Role>,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Complement {
-    pub concept: Rc<Concept>,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Nominal {
-    pub individual: Rc<Individual>,
-}
-
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub enum Entity {
-    Role(Rc<Role>),
-    AtomicConcept(Rc<AtomicConcept>),
-    Individual(Rc<Individual>),
-}
-
-impl Entity {
-    pub fn id(&self) -> &str {
-        match self {
-            Entity::Role(role) => &role.id,
-            Entity::AtomicConcept(c) => &c.id,
-            Entity::Individual(i) => &i.id,
-        }
-    }
-}
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct IndividualId(u32);
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
-pub enum Concept {
-    AtomicConcept(Rc<AtomicConcept>),
-    Complement(Rc<Complement>),
-    Conjunction(Rc<Conjunction>),
-    Disjunction(Rc<Disjunction>),
-    ExistentialRestriction(Rc<ExistentialRestriction>),
-    Nominal(Rc<Nominal>),
-    SelfRestriction(Rc<SelfRestriction>),
+pub enum ConceptData {
+    AtomicConcept(String),
+    ExistentialRestriction { role: RoleId, concept: ConceptId },
+    Conjunction { left: ConceptId, right: ConceptId },
+    Disjunction(HashSet<ConceptId>),
+    Complement(ConceptId),
+    Nominal(IndividualId),
+    SelfRestriction(RoleId),
 }
 
-impl Concept {
-    pub fn concept_signature(&self) -> HashSet<Rc<Concept>> {
-        match self {
-            Concept::AtomicConcept(_) => HashSet::unit(Rc::new(self.clone())),
-            Concept::Conjunction(conjunction) => {
-                let mut sig = conjunction.left.concept_signature().union(conjunction.right.concept_signature());
-                sig.insert(Rc::new(self.clone()));
-                sig
-            }
-            Concept::Disjunction(disjunction) => disjunction.operands.iter().flat_map(|o| o.concept_signature()).collect(),
-            Concept::ExistentialRestriction(er) => {
-                let mut sig = er.concept.concept_signature();
-                sig.insert(Rc::new(self.clone()));
-                sig
-            }
-            Concept::SelfRestriction(_) => HashSet::unit(Rc::new(self.clone())),
-            Concept::Complement(complement) => {
-                let mut sig = complement.concept.concept_signature();
-                sig.insert(Rc::new(self.clone()));
-                sig
-            }
-            Concept::Nominal(_) => HashSet::unit(Rc::new(self.clone())),
+#[derive(Clone, Debug)]
+pub struct Interner {
+    roles: Vector<String>,
+    role_ids: HashMap<String, RoleId>,
+    individuals: Vector<String>,
+    individual_ids: HashMap<String, IndividualId>,
+    concepts: Vector<ConceptData>,
+    concept_ids: HashMap<ConceptData, ConceptId>,
+}
+
+impl Default for Interner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Interner {
+    pub fn new() -> Self {
+        let mut interner = Interner {
+            roles: Vector::new(),
+            role_ids: Default::default(),
+            individuals: Vector::new(),
+            individual_ids: Default::default(),
+            concepts: Vector::new(),
+            concept_ids: Default::default(),
+        };
+        // Pre-intern TOP and BOTTOM so they have well-known IDs
+        interner.intern_concept(ConceptData::AtomicConcept(TOP.to_string()));
+        interner.intern_concept(ConceptData::AtomicConcept(BOTTOM.to_string()));
+        interner
+    }
+
+    pub fn top(&self) -> ConceptId {
+        ConceptId(0)
+    }
+
+    pub fn bottom(&self) -> ConceptId {
+        ConceptId(1)
+    }
+
+    pub fn intern_role(&mut self, id: &str) -> RoleId {
+        if let Some(&role_id) = self.role_ids.get(id) {
+            role_id
+        } else {
+            let role_id = RoleId(self.roles.len() as u32);
+            self.roles.push_back(id.to_string());
+            self.role_ids.insert(id.to_string(), role_id);
+            role_id
         }
     }
 
-    pub fn top() -> Concept {
-        Concept::AtomicConcept(Rc::new(AtomicConcept { id: TOP.to_string() }))
+    pub fn intern_individual(&mut self, id: &str) -> IndividualId {
+        if let Some(&ind_id) = self.individual_ids.get(id) {
+            ind_id
+        } else {
+            let ind_id = IndividualId(self.individuals.len() as u32);
+            self.individuals.push_back(id.to_string());
+            self.individual_ids.insert(id.to_string(), ind_id);
+            ind_id
+        }
     }
 
-    pub fn bottom() -> Concept {
-        Concept::AtomicConcept(Rc::new(AtomicConcept { id: BOTTOM.to_string() }))
+    pub fn intern_concept(&mut self, data: ConceptData) -> ConceptId {
+        if let Some(&concept_id) = self.concept_ids.get(&data) {
+            concept_id
+        } else {
+            let concept_id = ConceptId(self.concepts.len() as u32);
+            self.concepts.push_back(data.clone());
+            self.concept_ids.insert(data, concept_id);
+            concept_id
+        }
     }
-}
 
-impl HasSignature for Concept {
-    fn signature(&self) -> HashSet<Rc<Entity>> {
-        match self {
-            Concept::AtomicConcept(ac) => HashSet::unit(Rc::new(Entity::AtomicConcept(Rc::clone(ac)))),
-            Concept::Conjunction(conjunction) => conjunction.left.signature().union(conjunction.right.signature()),
-            Concept::Disjunction(d) => d.operands.iter().flat_map(|x| x.signature()).collect(),
-            Concept::ExistentialRestriction(er) => {
-                let mut sig = er.concept.signature();
-                sig.insert(Rc::new(Entity::Role(Rc::clone(&er.role))));
+    pub fn role_name(&self, id: RoleId) -> &str {
+        &self.roles[id.0 as usize]
+    }
+
+    pub fn individual_name(&self, id: IndividualId) -> &str {
+        &self.individuals[id.0 as usize]
+    }
+
+    pub fn concept_data(&self, id: ConceptId) -> &ConceptData {
+        &self.concepts[id.0 as usize]
+    }
+
+    pub fn find_concept(&self, data: &ConceptData) -> Option<ConceptId> {
+        self.concept_ids.get(data).copied()
+    }
+
+    pub fn concept_signature(&self, id: ConceptId) -> HashSet<ConceptId> {
+        match self.concept_data(id) {
+            ConceptData::AtomicConcept(_) => std::iter::once(id).collect(),
+            ConceptData::Conjunction { left, right } => {
+                let left = *left;
+                let right = *right;
+                let mut sig = self.concept_signature(left).union(self.concept_signature(right));
+                sig.insert(id);
                 sig
             }
-            Concept::SelfRestriction(sr) => HashSet::unit(Rc::new(Entity::Role(Rc::clone(&sr.role)))),
-            Concept::Complement(complement) => complement.concept.signature(),
-            Concept::Nominal(nominal) => HashSet::unit(Rc::new(Entity::Individual(Rc::clone(&nominal.individual)))),
+            ConceptData::Disjunction(operands) => {
+                let operands = operands.clone();
+                operands.iter().flat_map(|&o| self.concept_signature(o)).collect()
+            }
+            ConceptData::ExistentialRestriction { concept, .. } => {
+                let concept = *concept;
+                let mut sig = self.concept_signature(concept);
+                sig.insert(id);
+                sig
+            }
+            ConceptData::SelfRestriction(_) => std::iter::once(id).collect(),
+            ConceptData::Complement(inner) => {
+                let inner = *inner;
+                let mut sig = self.concept_signature(inner);
+                sig.insert(id);
+                sig
+            }
+            ConceptData::Nominal(_) => std::iter::once(id).collect(),
+        }
+    }
+
+    pub fn all_roles_in_concept(&self, id: ConceptId) -> HashSet<RoleId> {
+        match self.concept_data(id) {
+            ConceptData::AtomicConcept(_) => Default::default(),
+            ConceptData::Conjunction { left, right } => {
+                let left = *left;
+                let right = *right;
+                self.all_roles_in_concept(left).union(self.all_roles_in_concept(right))
+            }
+            ConceptData::Disjunction(operands) => {
+                let operands = operands.clone();
+                operands.iter().flat_map(|&o| self.all_roles_in_concept(o)).collect()
+            }
+            ConceptData::ExistentialRestriction { role, concept } => {
+                let role = *role;
+                let concept = *concept;
+                let mut sig = self.all_roles_in_concept(concept);
+                sig.insert(role);
+                sig
+            }
+            ConceptData::SelfRestriction(role) => std::iter::once(*role).collect(),
+            ConceptData::Complement(inner) => {
+                let inner = *inner;
+                self.all_roles_in_concept(inner)
+            }
+            ConceptData::Nominal(_) => Default::default(),
         }
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct ConceptInclusion {
-    pub subclass: Rc<Concept>,
-    pub superclass: Rc<Concept>,
+    pub subclass: ConceptId,
+    pub superclass: ConceptId,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct RoleInclusion {
-    pub subproperty: Rc<Role>,
-    pub superproperty: Rc<Role>,
+    pub subproperty: RoleId,
+    pub superproperty: RoleId,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct RoleComposition {
-    pub first: Rc<Role>,
-    pub second: Rc<Role>,
-    pub superproperty: Rc<Role>,
+    pub first: RoleId,
+    pub second: RoleId,
+    pub superproperty: RoleId,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub enum Axiom {
-    ConceptInclusion(Rc<ConceptInclusion>),
-    RoleInclusion(Rc<RoleInclusion>),
-    RoleComposition(Rc<RoleComposition>),
+pub struct TranslatedOntology {
+    pub interner: Interner,
+    pub concept_inclusions: HashSet<ConceptInclusion>,
+    pub role_inclusions: HashSet<RoleInclusion>,
+    pub role_compositions: HashSet<RoleComposition>,
 }
 
-impl HasSignature for Axiom {
-    fn signature(&self) -> HashSet<Rc<Entity>> {
-        match self {
-            Axiom::ConceptInclusion(ci) => ci.subclass.signature().union(ci.superclass.signature()),
-            Axiom::RoleInclusion(ri) => hashset![Rc::new(Entity::Role(Rc::clone(&ri.subproperty))), Rc::new(Entity::Role(Rc::clone(&ri.superproperty))),],
-            Axiom::RoleComposition(rc) => {
-                hashset![Rc::new(Entity::Role(Rc::clone(&rc.first))), Rc::new(Entity::Role(Rc::clone(&rc.second))), Rc::new(Entity::Role(Rc::clone(&rc.superproperty))),]
-            }
-        }
-    }
-}
-
-#[derive(Eq, PartialEq, Hash, Clone, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum QueueExpression {
-    Concept(Rc<Concept>),
-    ConceptInclusion(Rc<ConceptInclusion>),
-    SubPlus(Rc<ConceptInclusion>),
-    Link { subject: Rc<Concept>, role: Rc<Role>, target: Rc<Concept> },
+    Concept(ConceptId),
+    ConceptInclusion(ConceptInclusion),
+    SubPlus(ConceptInclusion),
+    Link { subject: ConceptId, role: RoleId, target: ConceptId },
 }

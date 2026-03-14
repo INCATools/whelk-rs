@@ -24,34 +24,21 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     debug!("{:?}", options);
 
     let path: &path::PathBuf = &options.input;
-    let ontology = read_input(&path).expect("unable to parse input");
+    let ontology = read_input(path).expect("unable to parse input");
     debug!("Loaded ontology in {}s", start.elapsed().as_secs());
 
-    // let summary = horned_bin::summary::summarize(ont.clone());
-    // debug!("Logical Axioms: {}, Annotation Axioms: {}", summary.logical_axiom, summary.annotation_axiom);
-
     let start_convert = time::Instant::now();
-    let whelk_axioms = translate_ontology(&ontology);
+    let translated = translate_ontology(&ontology);
     debug!("Converted axioms in {}ms", start_convert.elapsed().as_millis());
-    debug!("whelk_axioms.len(): {}", whelk_axioms.len());
+    debug!("concept_inclusions: {}, role_inclusions: {}, role_compositions: {}",
+        translated.concept_inclusions.len(),
+        translated.role_inclusions.len(),
+        translated.role_compositions.len());
 
     let start_reason = time::Instant::now();
-    let whelk = assert(&whelk_axioms);
+    let _whelk = assert(&translated);
     debug!("Reasoned in {}s", start_reason.elapsed().as_secs());
-    // for (sub, sup) in whelk.named_subsumptions() {
-    //     println!("{}\t{}", sub.id, sup.id);
-    // }
 
-    // let ci = ConceptInclusion {
-    //     subclass: Rc::new(Concept::AtomicConcept(Rc::new(AtomicConcept { id: "foo".to_string() }))),
-    //     superclass: Rc::new(Concept::AtomicConcept(Rc::new(AtomicConcept { id: "bar".to_string() }))),
-    // };
-    // let new_axioms = hashset![Rc::new(ci)];
-    // let whelk2 = assert_append(&new_axioms, &whelk);
-    // println!("{}", whelk2 == whelk);
-    // let whelk3 = whelk2.clone();
-    // println!("{}", whelk3 == whelk);
-    // println!("{}", whelk3 == whelk2);
     info!("Duration: {}", format_duration(start.elapsed()).to_string());
     Ok(())
 }
