@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "^4.1", features = ["derive"] }
 env_logger = "^0.10"
-horned-owl = "^0.14"
+horned-owl = "^1.0"
 humantime = "^2.0"
 im = "^15.1"
 itertools = "^0.10"
