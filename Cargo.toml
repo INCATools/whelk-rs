@@ -7,7 +7,12 @@ edition = "2021"
 [dependencies]
 clap = { version = "^4.1", features = ["derive"] }
 env_logger = "^0.10"
-horned-owl = "^1.4"
+# default-features = false drops horned-owl's `remote` feature (its ureq-based
+# import resolver), which whelk never uses — it only calls the owx/rdf readers
+# and the object model. Dropping it keeps ureq/rustls out of the graph so whelk
+# builds for wasm32 (used as the `--reasoner whelk` backend in owlmake's browser
+# build); the parsers' clock comes from horned-owl's own wasm-safe `web-time`.
+horned-owl = { version = "^1.4", default-features = false }
 humantime = "^2.0"
 im = "^15.1"
 itertools = "^0.10"
