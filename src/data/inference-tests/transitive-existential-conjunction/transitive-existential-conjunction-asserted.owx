@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#"
+     xml:base="http://www.example.org/transitive-existential-conjunction"
+     ontologyIRI="http://www.example.org/transitive-existential-conjunction">
+    <Prefix name="" IRI="http://www.example.org/transitive-existential-conjunction#"/>
+    <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
+    <Declaration>
+        <Class IRI="#ExampleComponent"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#InterfaceSegment"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ComponentZone"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ComponentPart"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#PhysicalStructure"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#HousingModule"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#AdjacentModule"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#InternalAssembly"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#FunctionalModule"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ParentAssembly"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ParentAssemblyStructure"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#part_of"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#continuous_with"/>
+    </Declaration>
+    <TransitiveObjectProperty>
+        <ObjectProperty IRI="#part_of"/>
+    </TransitiveObjectProperty>
+    <EquivalentClasses>
+        <Class IRI="#ExampleComponent"/>
+        <ObjectIntersectionOf>
+            <Class IRI="#InterfaceSegment"/>
+            <ObjectSomeValuesFrom>
+                <ObjectProperty IRI="#part_of"/>
+                <Class IRI="#HousingModule"/>
+            </ObjectSomeValuesFrom>
+            <ObjectSomeValuesFrom>
+                <ObjectProperty IRI="#continuous_with"/>
+                <Class IRI="#AdjacentModule"/>
+            </ObjectSomeValuesFrom>
+        </ObjectIntersectionOf>
+    </EquivalentClasses>
+    <SubClassOf>
+        <Class IRI="#InterfaceSegment"/>
+        <Class IRI="#ComponentZone"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ComponentZone"/>
+        <Class IRI="#ComponentPart"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ComponentPart"/>
+        <Class IRI="#PhysicalStructure"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#HousingModule"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#part_of"/>
+            <Class IRI="#InternalAssembly"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#InternalAssembly"/>
+        <Class IRI="#FunctionalModule"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#FunctionalModule"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#part_of"/>
+            <Class IRI="#ParentAssembly"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <EquivalentClasses>
+        <Class IRI="#ParentAssemblyStructure"/>
+        <ObjectIntersectionOf>
+            <Class IRI="#PhysicalStructure"/>
+            <ObjectSomeValuesFrom>
+                <ObjectProperty IRI="#part_of"/>
+                <Class IRI="#ParentAssembly"/>
+            </ObjectSomeValuesFrom>
+        </ObjectIntersectionOf>
+    </EquivalentClasses>
+</Ontology>
