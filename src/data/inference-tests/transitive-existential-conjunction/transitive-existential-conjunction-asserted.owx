@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#"
+     xml:base="http://www.example.org/transitive-existential-conjunction"
+     ontologyIRI="http://www.example.org/transitive-existential-conjunction">
+    <Prefix name="" IRI="http://www.example.org/transitive-existential-conjunction#"/>
+    <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
+    <Declaration>
+        <Class IRI="#Cervix"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#NeckOfOrgan"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ZoneOfOrgan"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#OrganPart"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#MulticellularAnatomicalStructure"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Uterus"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Vagina"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#InternalGenitalia"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ReproductiveOrgan"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ReproductiveSystem"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ReproductiveStructure"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#part_of"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#continuous_with"/>
+    </Declaration>
+    <TransitiveObjectProperty>
+        <ObjectProperty IRI="#part_of"/>
+    </TransitiveObjectProperty>
+    <EquivalentClasses>
+        <Class IRI="#Cervix"/>
+        <ObjectIntersectionOf>
+            <Class IRI="#NeckOfOrgan"/>
+            <ObjectSomeValuesFrom>
+                <ObjectProperty IRI="#part_of"/>
+                <Class IRI="#Uterus"/>
+            </ObjectSomeValuesFrom>
+            <ObjectSomeValuesFrom>
+                <ObjectProperty IRI="#continuous_with"/>
+                <Class IRI="#Vagina"/>
+            </ObjectSomeValuesFrom>
+        </ObjectIntersectionOf>
+    </EquivalentClasses>
+    <SubClassOf>
+        <Class IRI="#NeckOfOrgan"/>
+        <Class IRI="#ZoneOfOrgan"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ZoneOfOrgan"/>
+        <Class IRI="#OrganPart"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#OrganPart"/>
+        <Class IRI="#MulticellularAnatomicalStructure"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Uterus"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#part_of"/>
+            <Class IRI="#InternalGenitalia"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#InternalGenitalia"/>
+        <Class IRI="#ReproductiveOrgan"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ReproductiveOrgan"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#part_of"/>
+            <Class IRI="#ReproductiveSystem"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <EquivalentClasses>
+        <Class IRI="#ReproductiveStructure"/>
+        <ObjectIntersectionOf>
+            <Class IRI="#MulticellularAnatomicalStructure"/>
+            <ObjectSomeValuesFrom>
+                <ObjectProperty IRI="#part_of"/>
+                <Class IRI="#ReproductiveSystem"/>
+            </ObjectSomeValuesFrom>
+        </ObjectIntersectionOf>
+    </EquivalentClasses>
+</Ontology>

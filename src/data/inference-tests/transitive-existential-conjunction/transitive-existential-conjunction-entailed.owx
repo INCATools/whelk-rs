@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#"
+     xml:base="http://www.example.org/transitive-existential-conjunction"
+     ontologyIRI="http://www.example.org/transitive-existential-conjunction">
+    <Prefix name="" IRI="http://www.example.org/transitive-existential-conjunction#"/>
+    <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
+    <Declaration>
+        <Class IRI="#Cervix"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ReproductiveStructure"/>
+    </Declaration>
+    <SubClassOf>
+        <Class IRI="#Cervix"/>
+        <Class IRI="#ReproductiveStructure"/>
+    </SubClassOf>
+</Ontology>
