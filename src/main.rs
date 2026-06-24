@@ -30,10 +30,13 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     let start_convert = time::Instant::now();
     let translated = translate_ontology(&ontology);
     debug!("Converted axioms in {}ms", start_convert.elapsed().as_millis());
-    debug!("concept_inclusions: {}, role_inclusions: {}, role_compositions: {}",
+    debug!(
+        "concept_inclusions: {}, role_inclusions: {}, role_compositions: {}, role_ranges: {}",
         translated.concept_inclusions.len(),
         translated.role_inclusions.len(),
-        translated.role_compositions.len());
+        translated.role_compositions.len(),
+        translated.role_ranges.len()
+    );
 
     let start_reason = time::Instant::now();
     let _whelk = assert(&translated);

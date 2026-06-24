@@ -21,6 +21,7 @@ pub struct IndividualId(u32);
 pub enum ConceptData {
     AtomicConcept(String),
     ExistentialRestriction { role: RoleId, concept: ConceptId },
+    RoleTarget { range: ConceptId, concept: ConceptId },
     Conjunction { left: ConceptId, right: ConceptId },
     Disjunction(HashSet<ConceptId>),
     Complement(ConceptId),
@@ -137,6 +138,13 @@ impl Interner {
                 sig.insert(id);
                 sig
             }
+            ConceptData::RoleTarget { range, concept } => {
+                let range = *range;
+                let concept = *concept;
+                let mut sig = self.concept_signature(concept).union(self.concept_signature(range));
+                sig.insert(id);
+                sig
+            }
             ConceptData::SelfRestriction(_) => std::iter::once(id).collect(),
             ConceptData::Complement(inner) => {
                 let inner = *inner;
@@ -167,6 +175,11 @@ impl Interner {
                 sig.insert(role);
                 sig
             }
+            ConceptData::RoleTarget { range, concept } => {
+                let range = *range;
+                let concept = *concept;
+                self.all_roles_in_concept(concept).union(self.all_roles_in_concept(range))
+            }
             ConceptData::SelfRestriction(role) => std::iter::once(*role).collect(),
             ConceptData::Complement(inner) => {
                 let inner = *inner;
@@ -196,11 +209,18 @@ pub struct RoleComposition {
     pub superproperty: RoleId,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct RoleRange {
+    pub role: RoleId,
+    pub range: ConceptId,
+}
+
 pub struct TranslatedOntology {
     pub interner: Interner,
     pub concept_inclusions: HashSet<ConceptInclusion>,
     pub role_inclusions: HashSet<RoleInclusion>,
     pub role_compositions: HashSet<RoleComposition>,
+    pub role_ranges: HashSet<RoleRange>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]

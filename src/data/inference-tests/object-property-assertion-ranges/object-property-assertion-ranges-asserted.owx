@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#"
+     xml:base="http://www.example.org/object-property-assertion-ranges"
+     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+     xmlns:xml="http://www.w3.org/XML/1998/namespace"
+     xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+     xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+     ontologyIRI="http://www.example.org/object-property-assertion-ranges">
+    <Prefix name="" IRI="http://www.example.org/object-property-assertion-ranges#"/>
+    <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
+    <Declaration>
+        <Class IRI="#SourceIndividual"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#TargetIndividual"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Range"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#r"/>
+    </Declaration>
+    <Declaration>
+        <NamedIndividual IRI="#source"/>
+    </Declaration>
+    <Declaration>
+        <NamedIndividual IRI="#target"/>
+    </Declaration>
+    <EquivalentClasses>
+        <Class IRI="#SourceIndividual"/>
+        <ObjectOneOf>
+            <NamedIndividual IRI="#source"/>
+        </ObjectOneOf>
+    </EquivalentClasses>
+    <EquivalentClasses>
+        <Class IRI="#TargetIndividual"/>
+        <ObjectOneOf>
+            <NamedIndividual IRI="#target"/>
+        </ObjectOneOf>
+    </EquivalentClasses>
+    <ObjectPropertyRange>
+        <ObjectProperty IRI="#r"/>
+        <Class IRI="#Range"/>
+    </ObjectPropertyRange>
+    <ObjectPropertyAssertion>
+        <ObjectProperty IRI="#r"/>
+        <NamedIndividual IRI="#source"/>
+        <NamedIndividual IRI="#target"/>
+    </ObjectPropertyAssertion>
+</Ontology>
