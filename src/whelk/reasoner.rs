@@ -487,12 +487,26 @@ fn rule_minus_some(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut 
     if let ConceptData::ExistentialRestriction { role, concept } = state.interner.concept_data(ci.superclass).clone() {
         if let Some(&range) = state.role_ranges.get(&role) {
             if !concept_satisfies(state, concept, range) {
-                let role_target = role_target_concept(state, range, concept);
-                todo.push(QueueExpression::Concept(role_target));
+                // Property assertions translate as {a} subclassOf exists r.{b};
+                // only that non-empty nominal-to-nominal shape types the target.
+                if matches!(state.interner.concept_data(ci.subclass), ConceptData::Nominal(_)) && matches!(state.interner.concept_data(concept), ConceptData::Nominal(_)) {
+                    queue_derived_asserted_concept_inclusion(ConceptInclusion { subclass: concept, superclass: range }, state, todo);
+                } else {
+                    let role_target = role_target_concept(state, range, concept);
+                    todo.push(QueueExpression::Concept(role_target));
+                }
             }
         }
         todo.push(QueueExpression::Link { subject: ci.subclass, role, target: concept });
     }
+}
+
+fn queue_derived_asserted_concept_inclusion(ci: ConceptInclusion, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
+    let already_asserted = state.asserted_concept_inclusions_by_subclass.get(&ci.subclass).is_some_and(|axioms| axioms.iter().any(|&axiom| axiom == ci));
+    if !already_asserted {
+        process_asserted_concept_inclusion(ci, state, todo);
+    }
+    todo.push(QueueExpression::ConceptInclusion(ci));
 }
 
 fn rule_minus_self(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
