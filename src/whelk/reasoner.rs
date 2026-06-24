@@ -571,7 +571,8 @@ fn rule_plus_self_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut
     let sig = state.interner.concept_signature(ci.subclass);
     let mut new_negative_self_restrictions: Vec<(RoleId, ConceptId)> = vec![];
     for &concept in &sig {
-        if let ConceptData::SelfRestriction(role) = state.interner.concept_data(concept).clone() {
+        if let ConceptData::SelfRestriction(role) = state.interner.concept_data(concept) {
+            let role = *role;
             if !state.asserted_negative_self_restrictions_by_role.contains_key(&role) {
                 state.asserted_negative_self_restrictions_by_role.insert(role, concept);
                 new_negative_self_restrictions.push((role, concept));
