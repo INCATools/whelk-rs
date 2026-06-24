@@ -1149,22 +1149,48 @@ mod test {
     }
 
     #[test]
-    fn role_composition_index_keeps_multiple_superproperties_for_same_chain() {
+    fn role_composition_index_preserves_specific_superproperty_with_multiple_axioms_for_same_chain() {
         let mut interner = Interner::new();
         let part_of = interner.intern_role("http://example.org/part_of");
         let overlaps = interner.intern_role("http://example.org/overlaps");
+
         let role_inclusions = vec![RoleInclusion { subproperty: part_of, superproperty: overlaps }].into_iter().collect::<HashSet<_>>();
         let all_roles = vec![part_of, overlaps].into_iter().collect::<HashSet<_>>();
         let hier = super::saturate_roles(&role_inclusions, &all_roles);
-        let role_compositions =
-            vec![RoleComposition { first: part_of, second: part_of, superproperty: part_of }, RoleComposition { first: part_of, second: part_of, superproperty: overlaps }]
-                .into_iter()
-                .collect::<HashSet<_>>();
+
+        // Reproduce the failure mode of the previous group_by-based implementation by ensuring the
+        // two (part_of, part_of) entries are not adjacent in set iteration order.
+        let mut role_compositions: HashSet<RoleComposition> = Default::default();
+        role_compositions.insert(RoleComposition { first: part_of, second: part_of, superproperty: part_of });
+        role_compositions.insert(RoleComposition { first: part_of, second: part_of, superproperty: overlaps });
+
+        let mut found_non_adjacent = false;
+        for i in 0..256 {
+            let id = format!("http://example.org/r{}", i);
+            let r = interner.intern_role(&id);
+            role_compositions.insert(RoleComposition { first: r, second: r, superproperty: r });
+
+            let positions: Vec<_> = role_compositions
+                .iter()
+                .enumerate()
+                .filter(|(_, rc)| rc.first == part_of && rc.second == part_of)
+                .map(|(idx, rc)| (idx, rc.superproperty))
+                .collect();
+
+            if positions.len() == 2 && positions[0].0 + 1 != positions[1].0 && positions[1].1 == overlaps {
+                found_non_adjacent = true;
+                break;
+            }
+        }
+        assert!(found_non_adjacent, "test setup failed to construct non-adjacent iteration order");
 
         let hier_comps = super::index_role_compositions(&hier, &role_compositions);
-        let indexed_superproperties = hier_comps.get(&part_of).and_then(|by_second| by_second.get(&part_of)).expect("part_of chain should be indexed");
+        let indexed_superproperties = hier_comps
+            .get(&part_of)
+            .and_then(|by_second| by_second.get(&part_of))
+            .expect("part_of chain should be indexed");
 
-        assert!(indexed_superproperties.contains(&part_of));
+        assert!(indexed_superproperties.iter().any(|&r| r == part_of));
     }
 
     fn load_test_ontologies(parent_path: &path::PathBuf) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
