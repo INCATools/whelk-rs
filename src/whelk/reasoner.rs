@@ -932,11 +932,16 @@ fn all_super_roles(role: RoleId, exclude: &HashSet<RoleId>, sub_to_super: &HashM
 }
 
 fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &HashSet<RoleComposition>) -> HashMap<RoleId, HashMap<RoleId, Vector<RoleId>>> {
-    let role_comps_groups = chains.iter().group_by(|rc| (rc.first, rc.second));
     let mut role_comps: HashMap<(RoleId, RoleId), HashSet<RoleId>> = Default::default();
-    for (chain, group) in &role_comps_groups {
-        let supers: HashSet<RoleId> = group.map(|rc| rc.superproperty).collect();
-        role_comps.insert(chain, supers);
+    for rc in chains {
+        match role_comps.get_mut(&(rc.first, rc.second)) {
+            Some(superproperties) => {
+                superproperties.insert(rc.superproperty);
+            }
+            None => {
+                role_comps.insert((rc.first, rc.second), std::iter::once(rc.superproperty).collect());
+            }
+        }
     }
     let mut hier_comps_tuples: HashSet<(RoleId, RoleId, RoleId)> = Default::default();
     for (&r1, s1s) in hier {
@@ -984,7 +989,7 @@ fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &Has
 #[cfg(test)]
 mod test {
     use crate::read_input;
-    use crate::whelk::model::{ConceptData, ConceptInclusion, HashSet, Interner, RoleInclusion, RoleRange, TranslatedOntology, TOP};
+    use crate::whelk::model::{ConceptData, ConceptInclusion, HashSet, Interner, RoleComposition, RoleInclusion, RoleRange, TranslatedOntology, TOP};
     use crate::whelk::owl::translate_ontology;
     use crate::whelk::reasoner::{assert, assert_append, ReasonerState};
     use horned_owl::model::RcStr;
@@ -1141,6 +1146,25 @@ mod test {
         let whelk = assert(&ontology);
 
         assert!(!whelk.is_subclass_of(a, bottom));
+    }
+
+    #[test]
+    fn role_composition_index_keeps_multiple_superproperties_for_same_chain() {
+        let mut interner = Interner::new();
+        let part_of = interner.intern_role("http://example.org/part_of");
+        let overlaps = interner.intern_role("http://example.org/overlaps");
+        let role_inclusions = vec![RoleInclusion { subproperty: part_of, superproperty: overlaps }].into_iter().collect::<HashSet<_>>();
+        let all_roles = vec![part_of, overlaps].into_iter().collect::<HashSet<_>>();
+        let hier = super::saturate_roles(&role_inclusions, &all_roles);
+        let role_compositions =
+            vec![RoleComposition { first: part_of, second: part_of, superproperty: part_of }, RoleComposition { first: part_of, second: part_of, superproperty: overlaps }]
+                .into_iter()
+                .collect::<HashSet<_>>();
+
+        let hier_comps = super::index_role_compositions(&hier, &role_compositions);
+        let indexed_superproperties = hier_comps.get(&part_of).and_then(|by_second| by_second.get(&part_of)).expect("part_of chain should be indexed");
+
+        assert!(indexed_superproperties.contains(&part_of));
     }
 
     fn load_test_ontologies(parent_path: &path::PathBuf) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
