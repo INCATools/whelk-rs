@@ -5,13 +5,13 @@
     <Prefix name="" IRI="http://www.example.org/transitive-existential-conjunction#"/>
     <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
     <Declaration>
-        <Class IRI="#Cervix"/>
+        <Class IRI="#ExampleComponent"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#ReproductiveStructure"/>
+        <Class IRI="#ParentAssemblyStructure"/>
     </Declaration>
     <SubClassOf>
-        <Class IRI="#Cervix"/>
-        <Class IRI="#ReproductiveStructure"/>
+        <Class IRI="#ExampleComponent"/>
+        <Class IRI="#ParentAssemblyStructure"/>
     </SubClassOf>
 </Ontology>

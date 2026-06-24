@@ -5,37 +5,37 @@
     <Prefix name="" IRI="http://www.example.org/transitive-existential-conjunction#"/>
     <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
     <Declaration>
-        <Class IRI="#Cervix"/>
+        <Class IRI="#ExampleComponent"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#NeckOfOrgan"/>
+        <Class IRI="#InterfaceSegment"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#ZoneOfOrgan"/>
+        <Class IRI="#ComponentZone"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#OrganPart"/>
+        <Class IRI="#ComponentPart"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#MulticellularAnatomicalStructure"/>
+        <Class IRI="#PhysicalStructure"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#Uterus"/>
+        <Class IRI="#HousingModule"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#Vagina"/>
+        <Class IRI="#AdjacentModule"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#InternalGenitalia"/>
+        <Class IRI="#InternalAssembly"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#ReproductiveOrgan"/>
+        <Class IRI="#FunctionalModule"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#ReproductiveSystem"/>
+        <Class IRI="#ParentAssembly"/>
     </Declaration>
     <Declaration>
-        <Class IRI="#ReproductiveStructure"/>
+        <Class IRI="#ParentAssemblyStructure"/>
     </Declaration>
     <Declaration>
         <ObjectProperty IRI="#part_of"/>
@@ -47,56 +47,56 @@
         <ObjectProperty IRI="#part_of"/>
     </TransitiveObjectProperty>
     <EquivalentClasses>
-        <Class IRI="#Cervix"/>
+        <Class IRI="#ExampleComponent"/>
         <ObjectIntersectionOf>
-            <Class IRI="#NeckOfOrgan"/>
+            <Class IRI="#InterfaceSegment"/>
             <ObjectSomeValuesFrom>
                 <ObjectProperty IRI="#part_of"/>
-                <Class IRI="#Uterus"/>
+                <Class IRI="#HousingModule"/>
             </ObjectSomeValuesFrom>
             <ObjectSomeValuesFrom>
                 <ObjectProperty IRI="#continuous_with"/>
-                <Class IRI="#Vagina"/>
+                <Class IRI="#AdjacentModule"/>
             </ObjectSomeValuesFrom>
         </ObjectIntersectionOf>
     </EquivalentClasses>
     <SubClassOf>
-        <Class IRI="#NeckOfOrgan"/>
-        <Class IRI="#ZoneOfOrgan"/>
+        <Class IRI="#InterfaceSegment"/>
+        <Class IRI="#ComponentZone"/>
     </SubClassOf>
     <SubClassOf>
-        <Class IRI="#ZoneOfOrgan"/>
-        <Class IRI="#OrganPart"/>
+        <Class IRI="#ComponentZone"/>
+        <Class IRI="#ComponentPart"/>
     </SubClassOf>
     <SubClassOf>
-        <Class IRI="#OrganPart"/>
-        <Class IRI="#MulticellularAnatomicalStructure"/>
+        <Class IRI="#ComponentPart"/>
+        <Class IRI="#PhysicalStructure"/>
     </SubClassOf>
     <SubClassOf>
-        <Class IRI="#Uterus"/>
+        <Class IRI="#HousingModule"/>
         <ObjectSomeValuesFrom>
             <ObjectProperty IRI="#part_of"/>
-            <Class IRI="#InternalGenitalia"/>
+            <Class IRI="#InternalAssembly"/>
         </ObjectSomeValuesFrom>
     </SubClassOf>
     <SubClassOf>
-        <Class IRI="#InternalGenitalia"/>
-        <Class IRI="#ReproductiveOrgan"/>
+        <Class IRI="#InternalAssembly"/>
+        <Class IRI="#FunctionalModule"/>
     </SubClassOf>
     <SubClassOf>
-        <Class IRI="#ReproductiveOrgan"/>
+        <Class IRI="#FunctionalModule"/>
         <ObjectSomeValuesFrom>
             <ObjectProperty IRI="#part_of"/>
-            <Class IRI="#ReproductiveSystem"/>
+            <Class IRI="#ParentAssembly"/>
         </ObjectSomeValuesFrom>
     </SubClassOf>
     <EquivalentClasses>
-        <Class IRI="#ReproductiveStructure"/>
+        <Class IRI="#ParentAssemblyStructure"/>
         <ObjectIntersectionOf>
-            <Class IRI="#MulticellularAnatomicalStructure"/>
+            <Class IRI="#PhysicalStructure"/>
             <ObjectSomeValuesFrom>
                 <ObjectProperty IRI="#part_of"/>
-                <Class IRI="#ReproductiveSystem"/>
+                <Class IRI="#ParentAssembly"/>
             </ObjectSomeValuesFrom>
         </ObjectIntersectionOf>
     </EquivalentClasses>
