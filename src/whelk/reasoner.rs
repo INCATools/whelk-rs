@@ -1,8 +1,7 @@
 use itertools::Itertools;
 
 use crate::whelk::model::{
-    ConceptData, ConceptId, ConceptInclusion, HashMap, HashSet, Interner, QueueExpression,
-    RoleComposition, RoleId, RoleInclusion, TranslatedOntology, Vector,
+    ConceptData, ConceptId, ConceptInclusion, HashMap, HashSet, Interner, QueueExpression, RoleComposition, RoleId, RoleInclusion, RoleRange, TranslatedOntology, Vector,
 };
 
 #[derive(Clone, Debug)]
@@ -10,6 +9,7 @@ pub struct ReasonerState {
     pub interner: Interner,
     hier: HashMap<RoleId, HashSet<RoleId>>,
     hier_comps: HashMap<RoleId, HashMap<RoleId, Vector<RoleId>>>,
+    role_ranges: HashMap<RoleId, ConceptId>,
     inits: HashSet<ConceptId>,
     asserted_concept_inclusions_by_subclass: HashMap<ConceptId, Vector<ConceptInclusion>>,
     pub closure_subs_by_superclass: HashMap<ConceptId, HashSet<ConceptId>>,
@@ -39,6 +39,7 @@ impl ReasonerState {
             interner,
             hier: Default::default(),
             hier_comps: Default::default(),
+            role_ranges: Default::default(),
             inits: Default::default(),
             asserted_concept_inclusions_by_subclass: Default::default(),
             closure_subs_by_superclass: std::iter::once((bottom, Default::default())).collect(),
@@ -61,36 +62,30 @@ impl ReasonerState {
     pub fn named_subsumptions(&self) -> Vec<(&str, &str)> {
         self.closure_subs_by_subclass
             .iter()
-            .filter_map(|(&sub, supers)| {
-                if let ConceptData::AtomicConcept(sub_name) = self.interner.concept_data(sub) {
-                    Some((sub_name.as_str(), supers))
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(&sub, supers)| if let ConceptData::AtomicConcept(sub_name) = self.interner.concept_data(sub) { Some((sub_name.as_str(), supers)) } else { None })
             .flat_map(|(sub_name, supers)| {
-                supers.iter().filter_map(move |&sup| {
-                    if let ConceptData::AtomicConcept(sup_name) = self.interner.concept_data(sup) {
-                        Some((sub_name, sup_name.as_str()))
-                    } else {
-                        None
-                    }
-                })
+                supers.iter().filter_map(
+                    move |&sup| {
+                        if let ConceptData::AtomicConcept(sup_name) = self.interner.concept_data(sup) {
+                            Some((sub_name, sup_name.as_str()))
+                        } else {
+                            None
+                        }
+                    },
+                )
             })
             .collect()
     }
 
     pub fn is_subclass_of(&self, sub: ConceptId, sup: ConceptId) -> bool {
-        self.closure_subs_by_subclass
-            .get(&sub)
-            .is_some_and(|supers| supers.contains(&sup))
+        self.closure_subs_by_subclass.get(&sub).is_some_and(|supers| supers.contains(&sup))
     }
 }
 
 pub fn assert(ontology: &TranslatedOntology) -> ReasonerState {
-    let interner = ontology.interner.clone();
+    let mut interner = ontology.interner.clone();
 
-    // Collect all roles from role inclusions, compositions, and concept signatures
+    // Collect all roles from role inclusions, compositions, ranges, and concept signatures.
     let mut all_roles: HashSet<RoleId> = Default::default();
     for ri in &ontology.role_inclusions {
         all_roles.insert(ri.subproperty);
@@ -100,6 +95,12 @@ pub fn assert(ontology: &TranslatedOntology) -> ReasonerState {
         all_roles.insert(rc.first);
         all_roles.insert(rc.second);
         all_roles.insert(rc.superproperty);
+    }
+    for rr in &ontology.role_ranges {
+        all_roles.insert(rr.role);
+        for role in interner.all_roles_in_concept(rr.range) {
+            all_roles.insert(role);
+        }
     }
     for ci in &ontology.concept_inclusions {
         for role in interner.all_roles_in_concept(ci.subclass) {
@@ -111,34 +112,25 @@ pub fn assert(ontology: &TranslatedOntology) -> ReasonerState {
     }
 
     let hier = saturate_roles(&ontology.role_inclusions, &all_roles);
+    let role_ranges = index_role_ranges(&mut interner, &hier, &ontology.role_ranges);
     let hier_comps = index_role_compositions(&hier, &ontology.role_compositions);
     let mut initial_state = ReasonerState::new(interner);
     initial_state.hier = hier;
     initial_state.hier_comps = hier_comps;
+    initial_state.role_ranges = role_ranges;
     assert_append(&ontology.concept_inclusions, &initial_state)
 }
 
 pub fn assert_append(axioms: &HashSet<ConceptInclusion>, state: &ReasonerState) -> ReasonerState {
     let mut new_state = state.clone();
 
-    let distinct_concepts: HashSet<ConceptId> = axioms
-        .iter()
-        .flat_map(|ci| {
-            new_state.interner.concept_signature(ci.subclass)
-                .union(new_state.interner.concept_signature(ci.superclass))
-        })
-        .collect();
+    let distinct_concepts_from_axioms: HashSet<ConceptId> =
+        axioms.iter().flat_map(|ci| new_state.interner.concept_signature(ci.subclass).union(new_state.interner.concept_signature(ci.superclass))).collect();
+    let distinct_concepts_from_ranges: HashSet<ConceptId> = new_state.role_ranges.values().flat_map(|&range| new_state.interner.concept_signature(range)).collect();
+    let distinct_concepts = distinct_concepts_from_axioms.union(distinct_concepts_from_ranges);
 
-    let concepts_to_queue: Vec<ConceptId> = distinct_concepts
-        .iter()
-        .filter(|&&c| {
-            matches!(
-                new_state.interner.concept_data(c),
-                ConceptData::AtomicConcept(_) | ConceptData::Nominal(_)
-            )
-        })
-        .copied()
-        .collect();
+    let concepts_to_queue: Vec<ConceptId> =
+        distinct_concepts.iter().filter(|&&c| matches!(new_state.interner.concept_data(c), ConceptData::AtomicConcept(_) | ConceptData::Nominal(_))).copied().collect();
 
     let mut additional_axioms: HashSet<ConceptInclusion> = Default::default();
     for &c in &distinct_concepts {
@@ -223,7 +215,7 @@ fn process_concept(concept: ConceptId, state: &mut ReasonerState, todo: &mut Vec
             }
         }
         state.inits.insert(concept);
-        rule_0(concept, todo);
+        rule_0(concept, state, todo);
         rule_top(concept, state, todo);
     }
 }
@@ -246,6 +238,7 @@ fn process_concept_inclusion(ci: &ConceptInclusion, state: &mut ReasonerState, t
             }
         }
         rule_bottom_left(ci, state, todo);
+        rule_range_bottom_left(ci, state, todo);
         rule_subclass_right(ci, state, todo);
         rule_plus_and_right(ci, state, todo);
         rule_plus_and_left(ci, state, todo);
@@ -292,10 +285,12 @@ fn process_link(subject: ConceptId, role: RoleId, target: ConceptId, state: &mut
             }
         }
         rule_bottom_right(subject, target, state, todo);
+        rule_range_bottom_right(subject, role, target, state, todo);
         rule_plus_some_right(subject, role, target, state, todo);
         rule_plus_self_nominal_self_link(subject, role, target, state, todo);
         rule_ring_right(subject, role, target, state, todo);
         rule_ring_left(subject, role, target, state, todo);
+        rule_ring_range_left(subject, role, target, state, todo);
         rule_squiggle(target, todo);
     }
 }
@@ -305,10 +300,7 @@ fn rule_bottom_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec
         if let Some(roles_to_subjects) = state.links_by_target.get(&ci.subclass) {
             for subjects in roles_to_subjects.values() {
                 for &subject in subjects {
-                    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                        subclass: subject,
-                        superclass: state.bottom,
-                    }));
+                    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: subject, superclass: state.bottom }));
                 }
             }
         }
@@ -318,10 +310,40 @@ fn rule_bottom_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec
 fn rule_bottom_right(subject: ConceptId, target: ConceptId, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Some(subs) = state.closure_subs_by_superclass.get(&state.bottom) {
         if subs.contains(&target) {
-            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                subclass: subject,
-                superclass: state.bottom,
-            }));
+            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: subject, superclass: state.bottom }));
+        }
+    }
+}
+
+fn rule_range_bottom_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
+    if ci.superclass != state.bottom {
+        return;
+    }
+    if let ConceptData::RoleTarget { range, concept: filler } = state.interner.concept_data(ci.subclass) {
+        if let Some(roles_to_subjects) = state.links_by_target.get(filler) {
+            for (&role, subjects) in roles_to_subjects {
+                if role_has_exact_range(state, role, *range) {
+                    for &subject in subjects {
+                        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: subject, superclass: state.bottom }));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn rule_range_bottom_right(subject: ConceptId, role: RoleId, target: ConceptId, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
+    if matches!(state.interner.concept_data(target), ConceptData::RoleTarget { .. }) {
+        return;
+    }
+    if let Some(&range) = state.role_ranges.get(&role) {
+        if concept_satisfies(state, target, range) {
+            return;
+        }
+        if let Some(role_target) = find_role_target_concept(state, range, target) {
+            if state.inits.contains(&role_target) && state.is_subclass_of(role_target, state.bottom) {
+                todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: subject, superclass: state.bottom }));
+            }
         }
     }
 }
@@ -329,10 +351,7 @@ fn rule_bottom_right(subject: ConceptId, target: ConceptId, state: &ReasonerStat
 fn rule_subclass_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Some(others) = state.closure_subs_by_superclass.get(&ci.subclass) {
         for &other in others {
-            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                subclass: other,
-                superclass: ci.superclass,
-            }));
+            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: other, superclass: ci.superclass }));
         }
     }
 }
@@ -340,40 +359,30 @@ fn rule_subclass_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut V
 fn rule_subclass_right(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let Some(others) = state.asserted_concept_inclusions_by_subclass.get(&ci.superclass) {
         for other in others {
-            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                subclass: ci.subclass,
-                superclass: other.superclass,
-            }));
+            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: ci.subclass, superclass: other.superclass }));
         }
     }
 }
 
-fn rule_0(concept: ConceptId, todo: &mut Vec<QueueExpression>) {
-    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-        subclass: concept,
-        superclass: concept,
-    }));
+fn rule_0(concept: ConceptId, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
+    if let ConceptData::RoleTarget { range, concept: target } = state.interner.concept_data(concept) {
+        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: concept, superclass: *range }));
+        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: concept, superclass: *target }));
+    } else {
+        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: concept, superclass: concept }));
+    }
 }
 
 fn rule_top(concept: ConceptId, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
-    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-        subclass: concept,
-        superclass: state.top,
-    }));
+    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: concept, superclass: state.top }));
 }
 
 fn rule_minus_and(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let ConceptData::Conjunction { left, right } = state.interner.concept_data(ci.superclass) {
         let left = *left;
         let right = *right;
-        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-            subclass: ci.subclass,
-            superclass: left,
-        }));
-        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-            subclass: ci.subclass,
-            superclass: right,
-        }));
+        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: ci.subclass, superclass: left }));
+        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: ci.subclass, superclass: right }));
     }
 }
 
@@ -418,17 +427,10 @@ fn rule_plus_and_b(new_negative_conjunctions: Vec<ConceptId>, state: &ReasonerSt
             let right = *right;
             if let Some(left_subclasses) = state.closure_subs_by_superclass.get(&left) {
                 if let Some(right_subclasses) = state.closure_subs_by_superclass.get(&right) {
-                    let (smaller, larger) = if left_subclasses.len() <= right_subclasses.len() {
-                        (left_subclasses, right_subclasses)
-                    } else {
-                        (right_subclasses, left_subclasses)
-                    };
+                    let (smaller, larger) = if left_subclasses.len() <= right_subclasses.len() { (left_subclasses, right_subclasses) } else { (right_subclasses, left_subclasses) };
                     for &c in smaller {
                         if larger.contains(&c) {
-                            todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                                subclass: c,
-                                superclass: conjunction_id,
-                            }));
+                            todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: c, superclass: conjunction_id }));
                         }
                     }
                 }
@@ -445,19 +447,13 @@ fn rule_plus_and_left(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut V
             if d2s.len() < conjunctions_matching_left.len() {
                 for &d2 in d2s {
                     if let Some(&conjunction) = conjunctions_matching_left.get(&d2) {
-                        todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                            subclass: c,
-                            superclass: conjunction,
-                        }));
+                        todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: c, superclass: conjunction }));
                     }
                 }
             } else {
                 for (&right, &conjunction) in conjunctions_matching_left {
                     if d2s.contains(&right) {
-                        todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                            subclass: c,
-                            superclass: conjunction,
-                        }));
+                        todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: c, superclass: conjunction }));
                     }
                 }
             }
@@ -473,19 +469,13 @@ fn rule_plus_and_right(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut 
             if d1s.len() < conjunctions_matching_right.len() {
                 for &d1 in d1s {
                     if let Some(&conjunction) = conjunctions_matching_right.get(&d1) {
-                        todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                            subclass: c,
-                            superclass: conjunction,
-                        }));
+                        todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: c, superclass: conjunction }));
                     }
                 }
             } else {
                 for (&left, &conjunction) in conjunctions_matching_right {
                     if d1s.contains(&left) {
-                        todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                            subclass: c,
-                            superclass: conjunction,
-                        }));
+                        todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: c, superclass: conjunction }));
                     }
                 }
             }
@@ -493,23 +483,24 @@ fn rule_plus_and_right(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut 
     }
 }
 
-fn rule_minus_some(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
-    if let ConceptData::ExistentialRestriction { role, concept } = state.interner.concept_data(ci.superclass) {
-        todo.push(QueueExpression::Link {
-            subject: ci.subclass,
-            role: *role,
-            target: *concept,
-        });
+fn rule_minus_some(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
+    if let ConceptData::ExistentialRestriction { role, concept } = state.interner.concept_data(ci.superclass).clone() {
+        if let Some(&range) = state.role_ranges.get(&role) {
+            if !concept_satisfies(state, concept, range) {
+                let role_target = role_target_concept(state, range, concept);
+                todo.push(QueueExpression::Concept(role_target));
+            }
+        }
+        todo.push(QueueExpression::Link { subject: ci.subclass, role, target: concept });
     }
 }
 
 fn rule_minus_self(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if let ConceptData::SelfRestriction(role) = state.interner.concept_data(ci.superclass) {
-        todo.push(QueueExpression::Link {
-            subject: ci.subclass,
-            role: *role,
-            target: ci.subclass,
-        });
+        if let Some(&range) = state.role_ranges.get(role) {
+            todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: ci.subclass, superclass: range }));
+        }
+        todo.push(QueueExpression::Link { subject: ci.subclass, role: *role, target: ci.subclass });
     }
 }
 
@@ -582,20 +573,13 @@ fn rule_plus_self_a(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut
     rule_plus_self_left(new_negative_self_restrictions, state, todo);
 }
 
-fn rule_plus_self_left(
-    new_negative_self_restrictions: Vec<(RoleId, ConceptId)>,
-    state: &ReasonerState,
-    todo: &mut Vec<QueueExpression>,
-) {
+fn rule_plus_self_left(new_negative_self_restrictions: Vec<(RoleId, ConceptId)>, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     for (negative_role, negative_self_restriction) in new_negative_self_restrictions {
         for (&subclass, superclasses) in &state.closure_subs_by_subclass {
             for &superclass in superclasses {
                 if let ConceptData::SelfRestriction(role) = state.interner.concept_data(superclass) {
                     if role_subsumes(state, *role, negative_role) {
-                        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                            subclass,
-                            superclass: negative_self_restriction,
-                        }));
+                        todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass, superclass: negative_self_restriction }));
                     }
                 }
             }
@@ -606,10 +590,7 @@ fn rule_plus_self_left(
             }
             for (&role, targets) in roles_to_targets {
                 if targets.contains(&subject) && role_subsumes(state, role, negative_role) {
-                    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                        subclass: subject,
-                        superclass: negative_self_restriction,
-                    }));
+                    todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: subject, superclass: negative_self_restriction }));
                 }
             }
         }
@@ -621,29 +602,17 @@ fn rule_plus_self(ci: &ConceptInclusion, state: &ReasonerState, todo: &mut Vec<Q
         let role = *role;
         for super_role in super_roles_inclusive(state, role) {
             if let Some(&self_restriction) = state.asserted_negative_self_restrictions_by_role.get(&super_role) {
-                todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                    subclass: ci.subclass,
-                    superclass: self_restriction,
-                }));
+                todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: ci.subclass, superclass: self_restriction }));
             }
         }
     }
 }
 
-fn rule_plus_self_nominal_self_link(
-    subject: ConceptId,
-    role: RoleId,
-    target: ConceptId,
-    state: &ReasonerState,
-    todo: &mut Vec<QueueExpression>,
-) {
+fn rule_plus_self_nominal_self_link(subject: ConceptId, role: RoleId, target: ConceptId, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
     if subject == target && matches!(state.interner.concept_data(subject), ConceptData::Nominal(_)) {
         for super_role in super_roles_inclusive(state, role) {
             if let Some(&self_restriction) = state.asserted_negative_self_restrictions_by_role.get(&super_role) {
-                todo.push(QueueExpression::ConceptInclusion(ConceptInclusion {
-                    subclass: subject,
-                    superclass: self_restriction,
-                }));
+                todo.push(QueueExpression::ConceptInclusion(ConceptInclusion { subclass: subject, superclass: self_restriction }));
             }
         }
     }
@@ -657,11 +626,7 @@ fn super_roles_inclusive(state: &ReasonerState, role: RoleId) -> Vec<RoleId> {
 }
 
 fn role_subsumes(state: &ReasonerState, sub_role: RoleId, super_role: RoleId) -> bool {
-    sub_role == super_role
-        || state
-            .hier
-            .get(&sub_role)
-            .is_some_and(|super_roles| super_roles.contains(&super_role))
+    sub_role == super_role || state.hier.get(&sub_role).is_some_and(|super_roles| super_roles.contains(&super_role))
 }
 
 fn rule_plus_some_b_right(ci: &ConceptInclusion, state: &mut ReasonerState, todo: &mut Vec<QueueExpression>) {
@@ -701,10 +666,25 @@ fn rule_plus_some_left(new_propagations: Vec<(ConceptId, ConceptId)>, state: &Re
                     if let Some(super_roles) = state.hier.get(&role) {
                         if super_roles.contains(&er_role) {
                             for &subject in subjects {
-                                todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                                    subclass: subject,
-                                    superclass: er_id,
-                                }));
+                                todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: subject, superclass: er_id }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let ConceptData::RoleTarget { range, concept: filler } = state.interner.concept_data(concept) {
+            if let ConceptData::ExistentialRestriction { role: er_role, .. } = state.interner.concept_data(er_id) {
+                let er_role = *er_role;
+                if let Some(links_with_target) = state.links_by_target.get(filler) {
+                    for (&role, subjects) in links_with_target {
+                        if role_has_exact_range(state, role, *range) {
+                            if let Some(super_roles) = state.hier.get(&role) {
+                                if super_roles.contains(&er_role) {
+                                    for &subject in subjects {
+                                        todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: subject, superclass: er_id }));
+                                    }
+                                }
                             }
                         }
                     }
@@ -720,10 +700,30 @@ fn rule_plus_some_right(subject: ConceptId, role: RoleId, target: ConceptId, sta
             for &s in ss {
                 if let Some(fs) = role_to_er.get(&s) {
                     for &f in fs {
-                        todo.push(QueueExpression::SubPlus(ConceptInclusion {
-                            subclass: subject,
-                            superclass: f,
-                        }));
+                        todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: subject, superclass: f }));
+                    }
+                }
+            }
+        }
+    }
+    if matches!(state.interner.concept_data(target), ConceptData::RoleTarget { .. }) {
+        return;
+    }
+    if let Some(&range) = state.role_ranges.get(&role) {
+        if concept_satisfies(state, target, range) {
+            return;
+        }
+        if let Some(role_target) = find_role_target_concept(state, range, target) {
+            if state.inits.contains(&role_target) {
+                if let Some(role_to_er) = state.propagations.get(&role_target) {
+                    if let Some(ss) = state.hier.get(&role) {
+                        for &s in ss {
+                            if let Some(fs) = role_to_er.get(&s) {
+                                for &f in fs {
+                                    todo.push(QueueExpression::SubPlus(ConceptInclusion { subclass: subject, superclass: f }));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -768,6 +768,54 @@ fn rule_ring_right(subject: ConceptId, role: RoleId, target: ConceptId, state: &
                 }
             }
         }
+        if !matches!(state.interner.concept_data(target), ConceptData::RoleTarget { .. }) {
+            if let Some(&range) = state.role_ranges.get(&role) {
+                if !concept_satisfies(state, target, range) {
+                    if let Some(role_target) = find_role_target_concept(state, range, target) {
+                        if state.inits.contains(&role_target) {
+                            if let Some(r2_to_targets) = state.links_by_subject.get(&role_target) {
+                                for (&r2, targets) in r2_to_targets {
+                                    if let Some(ss) = r2s.get(&r2) {
+                                        for &s in ss {
+                                            let links_with_s = links_by_link_subject.and_then(|x| x.get(&s));
+                                            for &d in targets {
+                                                let create_link = match links_with_s {
+                                                    None => true,
+                                                    Some(l) => !l.contains(&d),
+                                                };
+                                                if create_link {
+                                                    todo.push(QueueExpression::Link { subject, role: s, target: d });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn rule_ring_range_left(subject: ConceptId, role: RoleId, target: ConceptId, state: &ReasonerState, todo: &mut Vec<QueueExpression>) {
+    if let ConceptData::RoleTarget { range, concept: filler } = state.interner.concept_data(subject) {
+        if let Some(roles_to_subjects) = state.links_by_target.get(filler) {
+            for (&r1, subjects) in roles_to_subjects {
+                if role_has_exact_range(state, r1, *range) {
+                    if let Some(r2s) = state.hier_comps.get(&r1) {
+                        if let Some(ss) = r2s.get(&role) {
+                            for &s in ss {
+                                for &range_subject in subjects {
+                                    todo.push(QueueExpression::Link { subject: range_subject, role: s, target });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -776,20 +824,57 @@ fn rule_squiggle(target: ConceptId, todo: &mut Vec<QueueExpression>) {
 }
 
 fn rule_union(disjunction_id: ConceptId, operands: &HashSet<ConceptId>) -> Vec<ConceptInclusion> {
-    operands
-        .iter()
-        .map(|&o| ConceptInclusion {
-            subclass: o,
-            superclass: disjunction_id,
-        })
-        .collect()
+    operands.iter().map(|&o| ConceptInclusion { subclass: o, superclass: disjunction_id }).collect()
 }
 
 fn rule_complement(inner: ConceptId, bottom: ConceptId) -> ConceptInclusion {
-    ConceptInclusion {
-        subclass: inner,
-        superclass: bottom,
+    ConceptInclusion { subclass: inner, superclass: bottom }
+}
+
+fn role_target_concept(state: &mut ReasonerState, range: ConceptId, concept: ConceptId) -> ConceptId {
+    state.interner.intern_concept(ConceptData::RoleTarget { range, concept })
+}
+
+fn find_role_target_concept(state: &ReasonerState, range: ConceptId, concept: ConceptId) -> Option<ConceptId> {
+    state.interner.find_concept(&ConceptData::RoleTarget { range, concept })
+}
+
+fn concept_satisfies(state: &ReasonerState, concept: ConceptId, superclass: ConceptId) -> bool {
+    state.closure_subs_by_subclass.get(&concept).is_some_and(|superclasses| superclasses.contains(&superclass))
+}
+
+fn role_has_exact_range(state: &ReasonerState, role: RoleId, range: ConceptId) -> bool {
+    state.role_ranges.get(&role).is_some_and(|&role_range| role_range == range)
+}
+
+fn index_role_ranges(interner: &mut Interner, hier: &HashMap<RoleId, HashSet<RoleId>>, role_range_axioms: &HashSet<RoleRange>) -> HashMap<RoleId, ConceptId> {
+    let mut asserted_ranges_by_role: HashMap<RoleId, HashSet<ConceptId>> = Default::default();
+    for role_range in role_range_axioms {
+        match asserted_ranges_by_role.get_mut(&role_range.role) {
+            Some(ranges) => {
+                ranges.insert(role_range.range);
+            }
+            None => {
+                asserted_ranges_by_role.insert(role_range.role, std::iter::once(role_range.range).collect());
+            }
+        }
     }
+
+    let mut result: HashMap<RoleId, ConceptId> = Default::default();
+    for (&subproperty, superproperties) in hier {
+        let mut inherited_ranges: Vec<ConceptId> =
+            superproperties.iter().filter_map(|superproperty| asserted_ranges_by_role.get(superproperty)).flat_map(|ranges| ranges.iter().copied()).collect();
+        inherited_ranges.sort();
+        inherited_ranges.dedup();
+        if let Some(range) = conjunction_from_ranges(interner, inherited_ranges) {
+            result.insert(subproperty, range);
+        }
+    }
+    result
+}
+
+fn conjunction_from_ranges(interner: &mut Interner, ranges: Vec<ConceptId>) -> Option<ConceptId> {
+    ranges.into_iter().reduce(|left, right| interner.intern_concept(ConceptData::Conjunction { left, right }))
 }
 
 fn saturate_roles(role_inclusions: &HashSet<RoleInclusion>, all_roles: &HashSet<RoleId>) -> HashMap<RoleId, HashSet<RoleId>> {
@@ -884,9 +969,7 @@ fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &Has
 #[cfg(test)]
 mod test {
     use crate::read_input;
-    use crate::whelk::model::{
-        ConceptData, ConceptInclusion, HashSet, Interner, RoleInclusion, TranslatedOntology, TOP,
-    };
+    use crate::whelk::model::{ConceptData, ConceptInclusion, HashSet, Interner, RoleInclusion, RoleRange, TranslatedOntology, TOP};
     use crate::whelk::owl::translate_ontology;
     use crate::whelk::reasoner::{assert, assert_append, ReasonerState};
     use horned_owl::model::RcStr;
@@ -904,25 +987,12 @@ mod test {
         let self_s = interner.intern_concept(ConceptData::SelfRestriction(s));
         let ontology = TranslatedOntology {
             interner,
-            concept_inclusions: vec![
-                ConceptInclusion {
-                    subclass: b,
-                    superclass: self_r,
-                },
-                ConceptInclusion {
-                    subclass: self_s,
-                    superclass: s_self_class,
-                },
-            ]
-            .into_iter()
-            .collect::<HashSet<_>>(),
-            role_inclusions: vec![RoleInclusion {
-                subproperty: r,
-                superproperty: s,
-            }]
-            .into_iter()
-            .collect::<HashSet<_>>(),
+            concept_inclusions: vec![ConceptInclusion { subclass: b, superclass: self_r }, ConceptInclusion { subclass: self_s, superclass: s_self_class }]
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            role_inclusions: vec![RoleInclusion { subproperty: r, superproperty: s }].into_iter().collect::<HashSet<_>>(),
             role_compositions: Default::default(),
+            role_ranges: Default::default(),
         };
         let whelk = assert(&ontology);
         assert!(whelk.is_subclass_of(b, s_self_class));
@@ -939,29 +1009,15 @@ mod test {
         let self_s = interner.intern_concept(ConceptData::SelfRestriction(s));
         let ontology = TranslatedOntology {
             interner,
-            concept_inclusions: vec![ConceptInclusion {
-                subclass: b,
-                superclass: self_r,
-            }]
-            .into_iter()
-            .collect::<HashSet<_>>(),
-            role_inclusions: vec![RoleInclusion {
-                subproperty: r,
-                superproperty: s,
-            }]
-            .into_iter()
-            .collect::<HashSet<_>>(),
+            concept_inclusions: vec![ConceptInclusion { subclass: b, superclass: self_r }].into_iter().collect::<HashSet<_>>(),
+            role_inclusions: vec![RoleInclusion { subproperty: r, superproperty: s }].into_iter().collect::<HashSet<_>>(),
             role_compositions: Default::default(),
+            role_ranges: Default::default(),
         };
         let whelk = assert(&ontology);
         assert!(!whelk.is_subclass_of(b, s_self_class));
 
-        let append_axioms = vec![ConceptInclusion {
-            subclass: self_s,
-            superclass: s_self_class,
-        }]
-        .into_iter()
-        .collect::<HashSet<_>>();
+        let append_axioms = vec![ConceptInclusion { subclass: self_s, superclass: s_self_class }].into_iter().collect::<HashSet<_>>();
         let whelk = assert_append(&append_axioms, &whelk);
         assert!(whelk.is_subclass_of(b, s_self_class));
     }
@@ -975,35 +1031,18 @@ mod test {
         let nominal = interner.intern_concept(ConceptData::Nominal(individual));
         let s_self_class = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/SSelf".to_string()));
         let self_s = interner.intern_concept(ConceptData::SelfRestriction(s));
-        let r_some_nominal = interner.intern_concept(ConceptData::ExistentialRestriction {
-            role: r,
-            concept: nominal,
-        });
+        let r_some_nominal = interner.intern_concept(ConceptData::ExistentialRestriction { role: r, concept: nominal });
         let ontology = TranslatedOntology {
             interner,
-            concept_inclusions: vec![ConceptInclusion {
-                subclass: nominal,
-                superclass: r_some_nominal,
-            }]
-            .into_iter()
-            .collect::<HashSet<_>>(),
-            role_inclusions: vec![RoleInclusion {
-                subproperty: r,
-                superproperty: s,
-            }]
-            .into_iter()
-            .collect::<HashSet<_>>(),
+            concept_inclusions: vec![ConceptInclusion { subclass: nominal, superclass: r_some_nominal }].into_iter().collect::<HashSet<_>>(),
+            role_inclusions: vec![RoleInclusion { subproperty: r, superproperty: s }].into_iter().collect::<HashSet<_>>(),
             role_compositions: Default::default(),
+            role_ranges: Default::default(),
         };
         let whelk = assert(&ontology);
         assert!(!whelk.is_subclass_of(nominal, s_self_class));
 
-        let append_axioms = vec![ConceptInclusion {
-            subclass: self_s,
-            superclass: s_self_class,
-        }]
-        .into_iter()
-        .collect::<HashSet<_>>();
+        let append_axioms = vec![ConceptInclusion { subclass: self_s, superclass: s_self_class }].into_iter().collect::<HashSet<_>>();
         let whelk = assert_append(&append_axioms, &whelk);
         assert!(whelk.is_subclass_of(nominal, s_self_class));
     }
@@ -1020,26 +1059,52 @@ mod test {
         let ontology = TranslatedOntology {
             interner,
             concept_inclusions: vec![
-                ConceptInclusion {
-                    subclass: some_r_a,
-                    superclass: r_some_a,
-                },
-                ConceptInclusion {
-                    subclass: r_some_a,
-                    superclass: some_r_a,
-                },
-                ConceptInclusion {
-                    subclass: top,
-                    superclass: self_r,
-                },
+                ConceptInclusion { subclass: some_r_a, superclass: r_some_a },
+                ConceptInclusion { subclass: r_some_a, superclass: some_r_a },
+                ConceptInclusion { subclass: top, superclass: self_r },
             ]
             .into_iter()
             .collect::<HashSet<_>>(),
             role_inclusions: Default::default(),
             role_compositions: Default::default(),
+            role_ranges: Default::default(),
         };
         let whelk = assert(&ontology);
         assert!(whelk.is_subclass_of(a, r_some_a));
+    }
+
+    #[test]
+    fn object_property_range_uses_role_target_without_retyping_filler() {
+        let mut interner = Interner::new();
+        let r = interner.intern_role("http://example.org/r");
+        let source = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/Source".to_string()));
+        let filler = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/Filler".to_string()));
+        let range = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/Range".to_string()));
+        let r_some_range_class = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/RSomeRange".to_string()));
+        let r_some_filler = interner.intern_concept(ConceptData::ExistentialRestriction { role: r, concept: filler });
+        let r_some_range = interner.intern_concept(ConceptData::ExistentialRestriction { role: r, concept: range });
+
+        let ontology = TranslatedOntology {
+            interner,
+            concept_inclusions: vec![ConceptInclusion { subclass: source, superclass: r_some_filler }, ConceptInclusion { subclass: r_some_range, superclass: r_some_range_class }]
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            role_inclusions: Default::default(),
+            role_compositions: Default::default(),
+            role_ranges: vec![RoleRange { role: r, range }].into_iter().collect::<HashSet<_>>(),
+        };
+
+        let whelk = assert(&ontology);
+
+        assert!(whelk.is_subclass_of(source, r_some_range_class));
+        assert!(!whelk.is_subclass_of(filler, range));
+        for role_to_targets in whelk.links_by_subject.values() {
+            for targets in role_to_targets.values() {
+                for target in targets {
+                    assert!(!matches!(whelk.interner.concept_data(*target), ConceptData::RoleTarget { .. }));
+                }
+            }
+        }
     }
 
     fn load_test_ontologies(parent_path: &path::PathBuf) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
@@ -1082,11 +1147,7 @@ mod test {
                     let subs = whelk.closure_subs_by_subclass.get(&sub_id);
                     assert!(subs.is_some(), "values by subclass key is not found: {:?}", sub_name);
                     subs_checked += 1;
-                    assert!(
-                        subs.unwrap().contains(&sup_id),
-                        "{:?} should be contained in subclass set with key {:?}",
-                        sup_name, sub_name
-                    );
+                    assert!(subs.unwrap().contains(&sup_id), "{:?} should be contained in subclass set with key {:?}", sup_name, sub_name);
                 }
             }
         }
@@ -1104,11 +1165,7 @@ mod test {
                     let sup_id = whelk.interner.find_concept(&ConceptData::AtomicConcept(sup_name.clone()));
                     if let (Some(sub_id), Some(sup_id)) = (sub_id, sup_id) {
                         if let Some(subs) = whelk.closure_subs_by_subclass.get(&sub_id) {
-                            assert!(
-                                !subs.contains(&sup_id),
-                                "{:?} should not be contained in subclass set with key {:?}",
-                                sup_name, sub_name
-                            );
+                            assert!(!subs.contains(&sup_id), "{:?} should not be contained in subclass set with key {:?}", sup_name, sub_name);
                             subs_checked += 1;
                         }
                     }

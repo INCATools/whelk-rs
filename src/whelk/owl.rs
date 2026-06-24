@@ -1,7 +1,4 @@
-use crate::whelk::model::{
-    ConceptData, ConceptId, ConceptInclusion, HashSet, Interner, RoleComposition, RoleInclusion,
-    TranslatedOntology, COMPOSITION_ROLE_PREFIX,
-};
+use crate::whelk::model::{ConceptData, ConceptId, ConceptInclusion, HashSet, Interner, RoleComposition, RoleInclusion, RoleRange, TranslatedOntology, COMPOSITION_ROLE_PREFIX};
 use horned_owl::model as hm;
 use horned_owl::model::ForIRI;
 use horned_owl::ontology::set::SetOntology;
@@ -11,23 +8,16 @@ struct AxiomSet {
     concept_inclusions: HashSet<ConceptInclusion>,
     role_inclusions: HashSet<RoleInclusion>,
     role_compositions: HashSet<RoleComposition>,
+    role_ranges: HashSet<RoleRange>,
 }
 
 impl AxiomSet {
     fn new() -> Self {
-        AxiomSet {
-            concept_inclusions: Default::default(),
-            role_inclusions: Default::default(),
-            role_compositions: Default::default(),
-        }
+        AxiomSet { concept_inclusions: Default::default(), role_inclusions: Default::default(), role_compositions: Default::default(), role_ranges: Default::default() }
     }
 
     fn ci(ci: ConceptInclusion) -> Self {
-        AxiomSet {
-            concept_inclusions: std::iter::once(ci).collect(),
-            role_inclusions: Default::default(),
-            role_compositions: Default::default(),
-        }
+        AxiomSet { concept_inclusions: std::iter::once(ci).collect(), role_inclusions: Default::default(), role_compositions: Default::default(), role_ranges: Default::default() }
     }
 
     fn union(self, other: Self) -> Self {
@@ -35,6 +25,7 @@ impl AxiomSet {
             concept_inclusions: self.concept_inclusions.union(other.concept_inclusions),
             role_inclusions: self.role_inclusions.union(other.role_inclusions),
             role_compositions: self.role_compositions.union(other.role_compositions),
+            role_ranges: self.role_ranges.union(other.role_ranges),
         }
     }
 }
@@ -51,6 +42,7 @@ pub fn translate_ontology<A: ForIRI>(ontology: &SetOntology<A>) -> TranslatedOnt
         concept_inclusions: result.concept_inclusions,
         role_inclusions: result.role_inclusions,
         role_compositions: result.role_compositions,
+        role_ranges: result.role_ranges,
     }
 }
 
@@ -67,12 +59,10 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
             let subclass = interner.intern_concept(ConceptData::Nominal(ind));
             AxiomSet::ci(ConceptInclusion { subclass, superclass: thing })
         }
-        hm::Component::SubClassOf(ax) => {
-            match (convert_expression(&ax.sub, interner), convert_expression(&ax.sup, interner)) {
-                (Some(subclass), Some(superclass)) => AxiomSet::ci(ConceptInclusion { subclass, superclass }),
-                _ => AxiomSet::new(),
-            }
-        }
+        hm::Component::SubClassOf(ax) => match (convert_expression(&ax.sub, interner), convert_expression(&ax.sup, interner)) {
+            (Some(subclass), Some(superclass)) => AxiomSet::ci(ConceptInclusion { subclass, superclass }),
+            _ => AxiomSet::new(),
+        },
         hm::Component::EquivalentClasses(hm::EquivalentClasses(expressions)) => {
             let converted: Vec<ConceptId> = expressions.iter().filter_map(|c| convert_expression(c, interner)).collect();
             let mut result = AxiomSet::new();
@@ -115,6 +105,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
                 concept_inclusions: Default::default(),
                 role_inclusions: std::iter::once(RoleInclusion { subproperty, superproperty }).collect(),
                 role_compositions: Default::default(),
+                role_ranges: Default::default(),
             }
         }
         hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
@@ -146,6 +137,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
                                     concept_inclusions: Default::default(),
                                     role_inclusions: Default::default(),
                                     role_compositions: std::iter::once(RoleComposition { first, second, superproperty }).collect(),
+                                    role_ranges: Default::default(),
                                 }
                             } else {
                                 let composition_property_id = format!("{}{}:{}", COMPOSITION_ROLE_PREFIX, first_id, second_id);
@@ -193,16 +185,11 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
                     sub: hm::SubObjectPropertyExpression::ObjectPropertyExpression(pair[1].clone()),
                     sup: pair[0].clone(),
                 });
-                result = result
-                    .union(translate_axiom_internal(&first_second, interner))
-                    .union(translate_axiom_internal(&second_first, interner));
+                result = result.union(translate_axiom_internal(&first_second, interner)).union(translate_axiom_internal(&second_first, interner));
             }
             result
         }
-        hm::Component::ObjectPropertyDomain(hm::ObjectPropertyDomain {
-            ope: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)),
-            ce: cls,
-        }) => {
+        hm::Component::ObjectPropertyDomain(hm::ObjectPropertyDomain { ope: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)), ce: cls }) => {
             if let Some(superclass) = convert_expression(cls, interner) {
                 let role = interner.intern_role(prop.as_ref());
                 let restriction = interner.intern_concept(ConceptData::ExistentialRestriction { role, concept: thing });
@@ -211,9 +198,20 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
                 AxiomSet::new()
             }
         }
-        hm::Component::ReflexiveObjectProperty(hm::ReflexiveObjectProperty(
-            hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)),
-        )) => {
+        hm::Component::ObjectPropertyRange(hm::ObjectPropertyRange { ope: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)), ce: cls }) => {
+            if let Some(range) = convert_expression(cls, interner) {
+                let role = interner.intern_role(prop.as_ref());
+                AxiomSet {
+                    concept_inclusions: Default::default(),
+                    role_inclusions: Default::default(),
+                    role_compositions: Default::default(),
+                    role_ranges: std::iter::once(RoleRange { role, range }).collect(),
+                }
+            } else {
+                AxiomSet::new()
+            }
+        }
+        hm::Component::ReflexiveObjectProperty(hm::ReflexiveObjectProperty(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)))) => {
             let role = interner.intern_role(prop.as_ref());
             let superclass = interner.intern_concept(ConceptData::SelfRestriction(role));
             AxiomSet::ci(ConceptInclusion { subclass: thing, superclass })
@@ -225,10 +223,7 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
             }),
             interner,
         ),
-        hm::Component::ClassAssertion(hm::ClassAssertion {
-            ce: cls,
-            i: hm::Individual::Named(hm::NamedIndividual(ind)),
-        }) => {
+        hm::Component::ClassAssertion(hm::ClassAssertion { ce: cls, i: hm::Individual::Named(hm::NamedIndividual(ind)) }) => {
             if let Some(superclass) = convert_expression(cls, interner) {
                 let individual = interner.intern_individual(ind.as_ref());
                 let subclass = interner.intern_concept(ConceptData::Nominal(individual));
@@ -260,18 +255,12 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
 
 pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>, interner: &mut Interner) -> Option<ConceptId> {
     match expression {
-        hm::ClassExpression::Class(hm::Class(iri)) => {
-            Some(interner.intern_concept(ConceptData::AtomicConcept(iri.to_string())))
-        }
-        hm::ClassExpression::ObjectSomeValuesFrom {
-            ope: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)),
-            bce: cls,
-        } => {
-            convert_expression(cls, interner).map(|concept| {
+        hm::ClassExpression::Class(hm::Class(iri)) => Some(interner.intern_concept(ConceptData::AtomicConcept(iri.to_string()))),
+        hm::ClassExpression::ObjectSomeValuesFrom { ope: hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)), bce: cls } => convert_expression(cls, interner)
+            .map(|concept| {
                 let role = interner.intern_role(prop.as_ref());
                 interner.intern_concept(ConceptData::ExistentialRestriction { role, concept })
-            })
-        }
+            }),
         hm::ClassExpression::ObjectHasSelf(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop))) => {
             let role = interner.intern_role(prop.as_ref());
             Some(interner.intern_concept(ConceptData::SelfRestriction(role)))
@@ -282,6 +271,10 @@ pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>, intern
             let converted: Option<Vec<ConceptId>> = expressions.iter().map(|cls| convert_expression(cls, interner)).collect();
             converted.and_then(|operands| expand_conjunction(operands, interner))
         }
+        hm::ClassExpression::ObjectUnionOf(expressions) => {
+            let converted: Option<Vec<ConceptId>> = expressions.iter().map(|cls| convert_expression(cls, interner)).collect();
+            converted.and_then(|operands| expand_disjunction(operands, interner))
+        }
         hm::ClassExpression::ObjectOneOf(individuals) => match individuals.as_slice() {
             [hm::Individual::Named(hm::NamedIndividual(ind))] => {
                 let individual = interner.intern_individual(ind.as_ref());
@@ -289,10 +282,16 @@ pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>, intern
             }
             _ => None,
         },
-        hm::ClassExpression::ObjectComplementOf(cls) => {
-            convert_expression(cls, interner).map(|concept| interner.intern_concept(ConceptData::Complement(concept)))
-        }
+        hm::ClassExpression::ObjectComplementOf(cls) => convert_expression(cls, interner).map(|concept| interner.intern_concept(ConceptData::Complement(concept))),
         _ => None,
+    }
+}
+
+fn expand_disjunction(operands: Vec<ConceptId>, interner: &mut Interner) -> Option<ConceptId> {
+    match operands.len() {
+        0 => None,
+        1 => operands.into_iter().next(),
+        _ => Some(interner.intern_concept(ConceptData::Disjunction(operands.into_iter().collect()))),
     }
 }
 
@@ -307,9 +306,7 @@ fn expand_conjunction(mut operands: Vec<ConceptId>, interner: &mut Interner) -> 
         }
         _ => {
             let left = operands.pop().unwrap();
-            expand_conjunction(operands, interner).map(|right| {
-                interner.intern_concept(ConceptData::Conjunction { left, right })
-            })
+            expand_conjunction(operands, interner).map(|right| interner.intern_concept(ConceptData::Conjunction { left, right }))
         }
     }
 }
@@ -323,9 +320,7 @@ mod test {
         let build = hm::Build::new_rc();
         let mut interner = Interner::new();
         let individual_iri = build.iri("http://example.org/a");
-        let expression = hm::ClassExpression::ObjectOneOf(vec![hm::Individual::Named(hm::NamedIndividual(
-            individual_iri,
-        ))]);
+        let expression = hm::ClassExpression::ObjectOneOf(vec![hm::Individual::Named(hm::NamedIndividual(individual_iri))]);
 
         let concept = convert_expression(&expression, &mut interner).expect("singleton ObjectOneOf should convert");
 
@@ -342,9 +337,7 @@ mod test {
         let build = hm::Build::new_rc();
         let mut interner = Interner::new();
         let role_iri = build.iri("http://example.org/r");
-        let expression = hm::ClassExpression::ObjectHasSelf(hm::ObjectPropertyExpression::ObjectProperty(
-            hm::ObjectProperty(role_iri.clone()),
-        ));
+        let expression = hm::ClassExpression::ObjectHasSelf(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(role_iri.clone())));
 
         let concept = convert_expression(&expression, &mut interner).expect("ObjectHasSelf should convert");
 
@@ -361,19 +354,12 @@ mod test {
         let build = hm::Build::new_rc();
         let mut interner = Interner::new();
         let role_iri = build.iri("http://example.org/r");
-        let axiom = hm::Component::ReflexiveObjectProperty(hm::ReflexiveObjectProperty(
-            hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(role_iri)),
-        ));
+        let axiom = hm::Component::ReflexiveObjectProperty(hm::ReflexiveObjectProperty(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(role_iri))));
 
         let axioms = translate_axiom_internal(&axiom, &mut interner);
         let role = interner.intern_role("http://example.org/r");
-        let self_restriction = interner
-            .find_concept(&ConceptData::SelfRestriction(role))
-            .expect("self restriction should be interned");
+        let self_restriction = interner.find_concept(&ConceptData::SelfRestriction(role)).expect("self restriction should be interned");
 
-        assert!(axioms.concept_inclusions.contains(&ConceptInclusion {
-            subclass: interner.top(),
-            superclass: self_restriction,
-        }));
+        assert!(axioms.concept_inclusions.contains(&ConceptInclusion { subclass: interner.top(), superclass: self_restriction }));
     }
 }

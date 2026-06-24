@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#"
+     xml:base="http://www.example.org/object-property-ranges"
+     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+     xmlns:xml="http://www.w3.org/XML/1998/namespace"
+     xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+     xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+     ontologyIRI="http://www.example.org/object-property-ranges">
+    <Prefix name="" IRI="http://www.example.org/object-property-ranges#"/>
+    <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
+    <Declaration>
+        <Class IRI="#Source"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#p_some_RangeA"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#q_some_RangeB"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#t_some_Target"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BadSource"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#SelfSource"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#SelfRange"/>
+    </Declaration>
+    <SubClassOf>
+        <Class IRI="#Source"/>
+        <Class IRI="#p_some_RangeA"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Source"/>
+        <Class IRI="#q_some_RangeB"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Source"/>
+        <Class IRI="#t_some_Target"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BadSource"/>
+        <Class IRI="http://www.w3.org/2002/07/owl#Nothing"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#SelfSource"/>
+        <Class IRI="#SelfRange"/>
+    </SubClassOf>
+</Ontology>
