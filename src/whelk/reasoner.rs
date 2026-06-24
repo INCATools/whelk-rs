@@ -141,7 +141,7 @@ pub fn assert_append(axioms: &HashSet<ConceptInclusion>, state: &ReasonerState) 
                 }
             }
             ConceptData::Complement(inner) => {
-                additional_axioms.insert(rule_complement(inner, new_state.bottom));
+                additional_axioms.insert(rule_complement(c, inner, &mut new_state.interner, new_state.bottom));
             }
             _ => {}
         }
@@ -841,8 +841,9 @@ fn rule_union(disjunction_id: ConceptId, operands: &HashSet<ConceptId>) -> Vec<C
     operands.iter().map(|&o| ConceptInclusion { subclass: o, superclass: disjunction_id }).collect()
 }
 
-fn rule_complement(inner: ConceptId, bottom: ConceptId) -> ConceptInclusion {
-    ConceptInclusion { subclass: inner, superclass: bottom }
+fn rule_complement(complement: ConceptId, inner: ConceptId, interner: &mut Interner, bottom: ConceptId) -> ConceptInclusion {
+    let contradiction = interner.intern_concept(ConceptData::Conjunction { left: inner, right: complement });
+    ConceptInclusion { subclass: contradiction, superclass: bottom }
 }
 
 fn role_target_concept(state: &mut ReasonerState, range: ConceptId, concept: ConceptId) -> ConceptId {
@@ -1119,6 +1120,27 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn complement_does_not_make_inner_concept_bottom() {
+        let mut interner = Interner::new();
+        let a = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/A".to_string()));
+        let not_a = interner.intern_concept(ConceptData::Complement(a));
+        let marker = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/Marker".to_string()));
+        let bottom = interner.bottom();
+
+        let ontology = TranslatedOntology {
+            interner,
+            concept_inclusions: vec![ConceptInclusion { subclass: not_a, superclass: marker }].into_iter().collect::<HashSet<_>>(),
+            role_inclusions: Default::default(),
+            role_compositions: Default::default(),
+            role_ranges: Default::default(),
+        };
+
+        let whelk = assert(&ontology);
+
+        assert!(!whelk.is_subclass_of(a, bottom));
     }
 
     fn load_test_ontologies(parent_path: &path::PathBuf) -> Result<(Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>, Option<SetOntology<RcStr>>), Box<dyn error::Error>> {
