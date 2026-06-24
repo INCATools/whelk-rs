@@ -211,6 +211,13 @@ fn translate_axiom_internal<A: ForIRI>(axiom: &hm::Component<A>, interner: &mut 
                 AxiomSet::new()
             }
         }
+        hm::Component::ReflexiveObjectProperty(hm::ReflexiveObjectProperty(
+            hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop)),
+        )) => {
+            let role = interner.intern_role(prop.as_ref());
+            let superclass = interner.intern_concept(ConceptData::SelfRestriction(role));
+            AxiomSet::ci(ConceptInclusion { subclass: thing, superclass })
+        }
         hm::Component::TransitiveObjectProperty(hm::TransitiveObjectProperty(prop)) => translate_axiom_internal(
             &hm::Component::SubObjectPropertyOf(hm::SubObjectPropertyOf {
                 sub: hm::SubObjectPropertyExpression::ObjectPropertyChain(vec![prop.clone(), prop.clone()]),
@@ -265,12 +272,23 @@ pub fn convert_expression<A: ForIRI>(expression: &hm::ClassExpression<A>, intern
                 interner.intern_concept(ConceptData::ExistentialRestriction { role, concept })
             })
         }
+        hm::ClassExpression::ObjectHasSelf(hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(prop))) => {
+            let role = interner.intern_role(prop.as_ref());
+            Some(interner.intern_concept(ConceptData::SelfRestriction(role)))
+        }
         hm::ClassExpression::ObjectIntersectionOf(expressions) => {
             let mut expressions = expressions.clone();
             expressions.sort_by(|a, b| b.cmp(a));
             let converted: Option<Vec<ConceptId>> = expressions.iter().map(|cls| convert_expression(cls, interner)).collect();
             converted.and_then(|operands| expand_conjunction(operands, interner))
         }
+        hm::ClassExpression::ObjectOneOf(individuals) => match individuals.as_slice() {
+            [hm::Individual::Named(hm::NamedIndividual(ind))] => {
+                let individual = interner.intern_individual(ind.as_ref());
+                Some(interner.intern_concept(ConceptData::Nominal(individual)))
+            }
+            _ => None,
+        },
         hm::ClassExpression::ObjectComplementOf(cls) => {
             convert_expression(cls, interner).map(|concept| interner.intern_concept(ConceptData::Complement(concept)))
         }
@@ -293,5 +311,69 @@ fn expand_conjunction(mut operands: Vec<ConceptId>, interner: &mut Interner) -> 
                 interner.intern_concept(ConceptData::Conjunction { left, right })
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn converts_singleton_one_of_to_nominal() {
+        let build = hm::Build::new_rc();
+        let mut interner = Interner::new();
+        let individual_iri = build.iri("http://example.org/a");
+        let expression = hm::ClassExpression::ObjectOneOf(vec![hm::Individual::Named(hm::NamedIndividual(
+            individual_iri,
+        ))]);
+
+        let concept = convert_expression(&expression, &mut interner).expect("singleton ObjectOneOf should convert");
+
+        match interner.concept_data(concept) {
+            ConceptData::Nominal(individual) => {
+                assert_eq!(interner.individual_name(*individual), "http://example.org/a");
+            }
+            other => panic!("expected nominal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn converts_object_has_self() {
+        let build = hm::Build::new_rc();
+        let mut interner = Interner::new();
+        let role_iri = build.iri("http://example.org/r");
+        let expression = hm::ClassExpression::ObjectHasSelf(hm::ObjectPropertyExpression::ObjectProperty(
+            hm::ObjectProperty(role_iri.clone()),
+        ));
+
+        let concept = convert_expression(&expression, &mut interner).expect("ObjectHasSelf should convert");
+
+        match interner.concept_data(concept) {
+            ConceptData::SelfRestriction(role) => {
+                assert_eq!(interner.role_name(*role), role_iri.as_ref());
+            }
+            other => panic!("expected self restriction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn converts_reflexive_property_to_top_self_restriction() {
+        let build = hm::Build::new_rc();
+        let mut interner = Interner::new();
+        let role_iri = build.iri("http://example.org/r");
+        let axiom = hm::Component::ReflexiveObjectProperty(hm::ReflexiveObjectProperty(
+            hm::ObjectPropertyExpression::ObjectProperty(hm::ObjectProperty(role_iri)),
+        ));
+
+        let axioms = translate_axiom_internal(&axiom, &mut interner);
+        let role = interner.intern_role("http://example.org/r");
+        let self_restriction = interner
+            .find_concept(&ConceptData::SelfRestriction(role))
+            .expect("self restriction should be interned");
+
+        assert!(axioms.concept_inclusions.contains(&ConceptInclusion {
+            subclass: interner.top(),
+            superclass: self_restriction,
+        }));
     }
 }
