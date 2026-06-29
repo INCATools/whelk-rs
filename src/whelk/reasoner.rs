@@ -113,21 +113,25 @@ pub fn assert(ontology: &TranslatedOntology) -> ReasonerState {
 
     let hier = saturate_roles(&ontology.role_inclusions, &all_roles);
     let role_ranges = index_role_ranges(&mut interner, &hier, &ontology.role_ranges);
+    let role_range_concepts: HashSet<ConceptId> = role_ranges.values().flat_map(|&range| interner.concept_signature(range)).collect();
     let hier_comps = index_role_compositions(&hier, &ontology.role_compositions);
     let mut initial_state = ReasonerState::new(interner);
     initial_state.hier = hier;
     initial_state.hier_comps = hier_comps;
     initial_state.role_ranges = role_ranges;
-    assert_append(&ontology.concept_inclusions, &initial_state)
+    assert_append_with_concepts(&ontology.concept_inclusions, &initial_state, role_range_concepts)
 }
 
 pub fn assert_append(axioms: &HashSet<ConceptInclusion>, state: &ReasonerState) -> ReasonerState {
+    assert_append_with_concepts(axioms, state, Default::default())
+}
+
+fn assert_append_with_concepts(axioms: &HashSet<ConceptInclusion>, state: &ReasonerState, extra_concepts: HashSet<ConceptId>) -> ReasonerState {
     let mut new_state = state.clone();
 
     let distinct_concepts_from_axioms: HashSet<ConceptId> =
         axioms.iter().flat_map(|ci| new_state.interner.concept_signature(ci.subclass).union(new_state.interner.concept_signature(ci.superclass))).collect();
-    let distinct_concepts_from_ranges: HashSet<ConceptId> = new_state.role_ranges.values().flat_map(|&range| new_state.interner.concept_signature(range)).collect();
-    let distinct_concepts = distinct_concepts_from_axioms.union(distinct_concepts_from_ranges);
+    let distinct_concepts = distinct_concepts_from_axioms.union(extra_concepts);
 
     let concepts_to_queue: Vec<ConceptId> =
         distinct_concepts.iter().filter(|&&c| matches!(new_state.interner.concept_data(c), ConceptData::AtomicConcept(_) | ConceptData::Nominal(_))).copied().collect();
@@ -989,7 +993,7 @@ fn index_role_compositions(hier: &HashMap<RoleId, HashSet<RoleId>>, chains: &Has
 #[cfg(test)]
 mod test {
     use crate::read_input;
-    use crate::whelk::model::{ConceptData, ConceptInclusion, HashSet, Interner, RoleComposition, RoleInclusion, RoleRange, TranslatedOntology, TOP};
+    use crate::whelk::model::{ConceptData, ConceptId, ConceptInclusion, HashSet, Interner, RoleComposition, RoleInclusion, RoleRange, TranslatedOntology, TOP};
     use crate::whelk::owl::translate_ontology;
     use crate::whelk::reasoner::{assert, assert_append, ReasonerState};
     use horned_owl::model::RcStr;
@@ -1149,6 +1153,37 @@ mod test {
     }
 
     #[test]
+    fn incremental_append_does_not_reprocess_static_role_range_support_axioms() {
+        let mut interner = Interner::new();
+        let r = interner.intern_role("http://example.org/r");
+        let range_base = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/RangeBase".to_string()));
+        let range = interner.intern_concept(ConceptData::Complement(range_base));
+        let appended_subclass = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/AppendedSubclass".to_string()));
+        let appended_superclass = interner.intern_concept(ConceptData::AtomicConcept("http://example.org/AppendedSuperclass".to_string()));
+
+        let ontology = TranslatedOntology {
+            interner,
+            concept_inclusions: Default::default(),
+            role_inclusions: Default::default(),
+            role_compositions: Default::default(),
+            role_ranges: vec![RoleRange { role: r, range }].into_iter().collect::<HashSet<_>>(),
+        };
+
+        let whelk = assert(&ontology);
+        let contradiction = whelk.interner.find_concept(&ConceptData::Conjunction { left: range_base, right: range }).unwrap();
+        assert_eq!(1, asserted_axiom_count(&whelk, contradiction, whelk.bottom));
+
+        let append_axioms = vec![ConceptInclusion { subclass: appended_subclass, superclass: appended_superclass }].into_iter().collect::<HashSet<_>>();
+        let whelk = assert_append(&append_axioms, &whelk);
+
+        assert_eq!(1, asserted_axiom_count(&whelk, contradiction, whelk.bottom));
+    }
+
+    fn asserted_axiom_count(state: &ReasonerState, subclass: ConceptId, superclass: ConceptId) -> usize {
+        state.asserted_concept_inclusions_by_subclass.get(&subclass).map_or(0, |axioms| axioms.iter().filter(|&&ci| ci.subclass == subclass && ci.superclass == superclass).count())
+    }
+
+    #[test]
     fn role_composition_index_preserves_specific_superproperty_with_multiple_axioms_for_same_chain() {
         let mut interner = Interner::new();
         let part_of = interner.intern_role("http://example.org/part_of");
@@ -1170,12 +1205,8 @@ mod test {
             let r = interner.intern_role(&id);
             role_compositions.insert(RoleComposition { first: r, second: r, superproperty: r });
 
-            let positions: Vec<_> = role_compositions
-                .iter()
-                .enumerate()
-                .filter(|(_, rc)| rc.first == part_of && rc.second == part_of)
-                .map(|(idx, rc)| (idx, rc.superproperty))
-                .collect();
+            let positions: Vec<_> =
+                role_compositions.iter().enumerate().filter(|(_, rc)| rc.first == part_of && rc.second == part_of).map(|(idx, rc)| (idx, rc.superproperty)).collect();
 
             if positions.len() == 2 && positions[0].0 + 1 != positions[1].0 && positions[1].1 == overlaps {
                 found_non_adjacent = true;
@@ -1185,10 +1216,7 @@ mod test {
         assert!(found_non_adjacent, "test setup failed to construct non-adjacent iteration order");
 
         let hier_comps = super::index_role_compositions(&hier, &role_compositions);
-        let indexed_superproperties = hier_comps
-            .get(&part_of)
-            .and_then(|by_second| by_second.get(&part_of))
-            .expect("part_of chain should be indexed");
+        let indexed_superproperties = hier_comps.get(&part_of).and_then(|by_second| by_second.get(&part_of)).expect("part_of chain should be indexed");
 
         assert!(indexed_superproperties.iter().any(|&r| r == part_of));
     }
