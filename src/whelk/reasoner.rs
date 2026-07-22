@@ -144,7 +144,8 @@ pub fn assert_append(axioms: &HashSet<ConceptInclusion>, state: &ReasonerState) 
                 }
             }
             ConceptData::Complement(inner) => {
-                additional_axioms.insert(rule_complement(inner, new_state.bottom));
+                let bottom = new_state.bottom;
+                additional_axioms.insert(rule_complement(c, inner, bottom, &mut new_state.interner));
             }
             _ => {}
         }
@@ -669,9 +670,22 @@ fn rule_union(disjunction_id: ConceptId, operands: &HashSet<ConceptId>) -> Vec<C
         .collect()
 }
 
-fn rule_complement(inner: ConceptId, bottom: ConceptId) -> ConceptInclusion {
+/// `¬B` is not an EL concept, but the constraint it places on the rest of the
+/// ontology is: nothing is both `B` and `¬B`. Emit exactly that, as the
+/// disjointness `B ⊓ ¬B ⊑ ⊥`, and let the conjunction rules derive `X ⊑ ⊥` for
+/// an `X` that is actually shown to be both.
+///
+/// Asserting the far stronger `B ⊑ ⊥` instead makes every complemented class
+/// unsatisfiable on sight — and OBO ontologies complement freely (NCBITaxon's
+/// disjoint-over-`in taxon` axioms alone put ~2.3k `ObjectComplementOf` into
+/// CL's import closure), so that collapses most of the ontology.
+fn rule_complement(complement: ConceptId, inner: ConceptId, bottom: ConceptId, interner: &mut Interner) -> ConceptInclusion {
+    let conjunction = interner.intern_concept(ConceptData::Conjunction {
+        left: inner,
+        right: complement,
+    });
     ConceptInclusion {
-        subclass: inner,
+        subclass: conjunction,
         superclass: bottom,
     }
 }
